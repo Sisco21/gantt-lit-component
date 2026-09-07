@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gantt Chart - Lit Component</title>
+  <link rel="stylesheet" href="/demo/styles.css" />
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Gantt Chart Component</h1>
+      <p>Reusable Lit Component with parent tasks, drag & drop, and custom colors</p>
+    </header>
+
+    <div class="toolbar">
+      <button id="btn-json">📥 Import JSON</button>
+      <button id="btn-mpp">📥 Import MS Project</button>
+      <button id="btn-sample">📋 Charger Exemple</button>
+      <button id="btn-reset">🔄 Réinitialiser</button>
+      <button id="btn-theme" type="button" aria-pressed="false">☾ Thème sombre</button>
+      <label class="calendar-control">Début de semaine
+        <select id="week-start">
+          <option value="1">Lundi</option>
+          <option value="0">Dimanche</option>
+        </select>
+      </label>
+      <label class="calendar-control">Numérotation
+        <select id="week-numbering">
+          <option value="first-full-week">Première semaine complète</option>
+          <option value="iso">ISO-8601</option>
+        </select>
+      </label>
+    </div>
+
+    <div id="status" class="status"></div>
+
+    <gantt-chart id="gantt" theme="light"></gantt-chart>
+
+    <input type="file" id="json-input" accept=".json" style="display:none" />
+    <input type="file" id="mpp-input" accept=".mpp,.xml" style="display:none" />
+  </div>
+
+  <script type="module" src="/demo/main.ts"></script>
+</body>
+</html>

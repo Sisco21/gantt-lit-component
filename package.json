@@ -1,0 +1,44 @@
+{
+  "name": "gantt-lit-component",
+  "version": "1.0.0",
+  "description": "Reusable Gantt chart component built with Lit Components and TypeScript",
+  "type": "module",
+  "main": "dist/gantt-chart.js",
+  "types": "dist/gantt-chart.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/gantt-chart.js",
+      "types": "./dist/gantt-chart.d.ts"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "lint": "eslint . --ext ts,tsx"
+  },
+  "dependencies": {
+    "lit": "^3.3.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "eslint": "^8.55.0",
+    "eslint-plugin-lit": "^1.1.0",
+    "typescript": "^5.3.0",
+    "vite": "^5.0.0"
+  },
+  "keywords": [
+    "gantt",
+    "lit",
+    "component",
+    "web-component",
+    "chart",
+    "project-management"
+  ],
+  "license": "MIT"
+}

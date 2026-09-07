@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+dist/
+
+# Build
+.DS_Store
+*.log
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+
+# Vite
+.vite/
+
+# Coverage
+coverage/
+.nyc_output/

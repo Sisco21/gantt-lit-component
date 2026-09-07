@@ -1,0 +1,172 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f5f7fa;
+  min-height: 100vh;
+  color: #172033;
+}
+
+header {
+  flex: 0 0 auto;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 20px 30px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+header h1 {
+  font-size: 1.5rem;
+  margin-bottom: 5px;
+}
+
+header p {
+  opacity: 0.8;
+  font-size: 0.9rem;
+}
+
+.toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 10px;
+  padding: 15px 30px;
+  background: white;
+  border-bottom: 1px solid #e1e4e8;
+  flex-wrap: wrap;
+}
+
+.toolbar button {
+  padding: 8px 16px;
+  border: 1px solid #d1d5da;
+  background: #f6f8fa;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s;
+}
+
+.toolbar button:hover {
+  background: #e1e4e8;
+}
+
+.calendar-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #455468;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.calendar-control select {
+  min-height: 34px;
+  border: 1px solid #d1d5da;
+  border-radius: 6px;
+  background: #f6f8fa;
+  color: inherit;
+  font: inherit;
+  padding: 0 8px;
+}
+
+html[data-theme='dark'] body {
+  background: #0d1522;
+  color: #e5edf8;
+}
+
+html[data-theme='dark'] header {
+  background: #18243a;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme='dark'] .toolbar {
+  background: #121c2b;
+  border-bottom-color: #394a63;
+}
+
+html[data-theme='dark'] .toolbar button {
+  border-color: #4a5d78;
+  background: #1b283a;
+  color: #e5edf8;
+}
+
+html[data-theme='dark'] .toolbar button:hover {
+  background: #26364c;
+}
+
+html[data-theme='dark'] .calendar-control {
+  color: #c8d4e6;
+}
+
+html[data-theme='dark'] .calendar-control select {
+  border-color: #4a5d78;
+  background: #1b283a;
+  color: #e5edf8;
+}
+
+html[data-theme='dark'] .status.info {
+  background: #183655;
+  color: #9acbff;
+}
+
+html[data-theme='dark'] .status.success {
+  background: #163e34;
+  color: #8ae3b5;
+}
+
+html[data-theme='dark'] .status.error {
+  background: #4a2630;
+  color: #ffb4c0;
+}
+
+.status {
+  flex: 0 0 auto;
+  padding: 8px 30px;
+  font-size: 0.85rem;
+  text-align: center;
+  transition: all 0.3s;
+}
+
+.status.info {
+  background: #e1f0ff;
+  color: #0969da;
+}
+
+.status.success {
+  background: #dafce2;
+  color: #28a745;
+}
+
+.status.error {
+  background: #ffebe9;
+  color: #cf222e;
+}
+
+#gantt {
+  flex: 1 1 auto;
+  display: block;
+  width: 100%;
+  min-height: 0;
+  height: auto;
+  background: white;
+}
+
+html[data-theme='dark'] #gantt {
+  background: #121c2b;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
