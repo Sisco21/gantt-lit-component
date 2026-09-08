@@ -352,7 +352,10 @@ export class GanttChart extends LitElement {
     .task-cell.parent { font-weight: 700; }
     .task-row .toggle { position: absolute; left: 2px; top: 0; z-index: 2; display: flex; align-items: center; justify-content: center; width: 19px; height: 100%; padding: 0; border: 0; background: transparent; color: var(--gantt-muted); font-size: 11px; }
     .task-row .toggle:disabled { cursor: default; }
-    .task-cell.name .task-name { display: block; overflow: hidden; padding-left: 19px; text-overflow: ellipsis; white-space: nowrap; }
+    .task-cell.name .task-name { display: block; flex: 1 1 auto; min-width: 0; overflow: hidden; padding-right: 24px; padding-left: 19px; text-overflow: ellipsis; white-space: nowrap; }
+    .task-focus { position: absolute; top: 50%; right: 3px; display: flex; align-items: center; justify-content: center; width: 21px; height: 21px; padding: 0; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--gantt-muted); transform: translateY(-50%); }
+    .task-focus:hover, .task-focus:focus-visible { border-color: var(--gantt-control-border); background: var(--gantt-control-hover); color: var(--gantt-blue); outline: 0; }
+    .task-focus svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.7; }
     .timeline-row { overflow: hidden; background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(var(--day-width) - 1px), var(--gantt-grid-line) calc(var(--day-width) - 1px), var(--gantt-grid-line) var(--day-width)); }
 
     .today-line { position: absolute; top: var(--timeline-header-height, ${HEADER_HEIGHT}px); bottom: 0; z-index: 3; width: 2px; background: var(--gantt-red); opacity: .75; pointer-events: none; }
@@ -755,6 +758,12 @@ export class GanttChart extends LitElement {
     this.requestUpdate();
   }
 
+  /** Selects a row from the left grid and brings its bar to the centre of the timeline. */
+  private focusTaskFromGrid(taskId: string): void {
+    this.selectTask(taskId);
+    void this.updateComplete.then(() => this.scrollTaskIntoView(taskId));
+  }
+
   toggleTask(taskId: string): void {
     const toggle = (tasks: GanttTask[]): GanttTask[] => tasks.map(task => {
       if (task.id === taskId) return { ...task, collapsed: !task.collapsed };
@@ -846,9 +855,10 @@ export class GanttChart extends LitElement {
     const task = this.findTask(taskId);
     const timeline = this.renderRoot.querySelector<HTMLElement>('.timeline-scroll');
     if (!task || !timeline) return;
-    const range = getDateRange(this.getFlatTasks());
-    const targetX = this.dateToX(task.start, range.start, this.getDayWidth());
-    timeline.scrollTo({ left: Math.max(0, targetX - timeline.clientWidth * .35), behavior: 'smooth' });
+    const dayWidth = this.getDayWidth();
+    const range = this.alignRangeToWeeks(getDateRange(this.getFlatTasks()));
+    const taskCenterX = this.dateToX(task.start, range.start, dayWidth) + (diffDays(task.start, task.end) + 1) * dayWidth / 2;
+    timeline.scrollTo({ left: Math.max(0, taskCenterX - timeline.clientWidth / 2), behavior: 'smooth' });
   }
 
   updateTask(taskId: string, patch: Partial<GanttTask>): void {
@@ -931,7 +941,7 @@ export class GanttChart extends LitElement {
     return html`
       <div class="task-row ${selected ? 'selected' : ''} ${index % 2 ? 'alt' : ''} ${searchMatches.has(task.id) ? 'search-match' : ''} ${task.id === currentSearchId ? 'search-current' : ''}" data-task-id=${task.id}
            draggable="true"
-           @click=${() => this.selectTask(task.id)}
+           @click=${() => this.focusTaskFromGrid(task.id)}
            @dragstart=${(event: DragEvent) => this.handleDragStart(event, task.id)}
            @dragover=${(event: DragEvent) => this.handleDragOver(event)}
            @drop=${(event: DragEvent) => this.handleDrop(event, task.id)}
@@ -953,6 +963,9 @@ export class GanttChart extends LitElement {
             ${hasChildren ? task.collapsed ? '▶' : '▼' : '·'}
           </button>
           <span class="task-name" style="padding-left:${19 + depth * 16}px">${value}</span>
+          <button class="task-focus" aria-label="Centrer la tâche dans le Gantt" title="Centrer dans le Gantt" @click=${(event: Event) => { event.stopPropagation(); this.focusTaskFromGrid(task.id); }} @dblclick=${(event: Event) => event.stopPropagation()}>
+            <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4.5"></circle><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3"></path></svg>
+          </button>
         ` : this.formatColumnValue(value, column, task)}
       </div>
     `;
