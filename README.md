@@ -359,17 +359,17 @@ Use `taskBarTemplate` to append information after the task name inside regular t
 import { html } from 'lit';
 
 gantt.setOptions({
-  taskBarTemplate: ({ task, color, width, kind }) => kind === 'summary'
+  taskBarTemplate: ({ task, color, width, durationDays, kind }) => kind === 'summary'
     ? html`${task.metadata?.budget ?? 0} €`
     : width > 100
-      ? html`${task.progress}%`
+      ? html`${durationDays} days · ${task.progress}%`
       : '',
 });
 
 gantt.updateTask('task-42', { color: '#7c3aed' });
 ```
 
-The template receives the task, its persisted colour, the visible bar width and a `kind` (`task` or `summary`).
+The template receives the task, its persisted colour, the visible bar width, `durationDays`, and a `kind` (`task` or `summary`). `durationDays` matches the built-in Duration column and is recalculated whenever a task is moved or resized.
 
 ### Add business and calculated columns
 

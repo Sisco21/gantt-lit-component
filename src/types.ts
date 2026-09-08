@@ -174,6 +174,8 @@ export interface GanttTaskBarTemplateContext {
   task: GanttTask;
   color: string;
   width: number;
+  /** Task duration in days, matching the built-in Duration grid column. */
+  durationDays: number;
   kind: GanttTaskBarKind;
 }
 

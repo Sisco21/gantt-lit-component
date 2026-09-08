@@ -1217,7 +1217,7 @@ export class GanttChart extends LitElement {
     const milestone = task.type === 'milestone';
     const summary = !milestone && (task.type === 'parent' || Boolean(task.children?.length));
     if (summary) {
-      const template = this.options.taskBarTemplate?.({ task, color, width, kind: 'summary' }) ?? this.options.summaryTemplate?.(task);
+      const template = this.options.taskBarTemplate?.({ task, color, width, durationDays: this.getTaskDurationDays(task), kind: 'summary' }) ?? this.options.summaryTemplate?.(task);
       return html`
         <div class="summary-bar ${selected ? 'selected' : ''}" style="left:${left}px; width:${Math.max(24, width)}px; --summary-color:${color};"
              title="${task.name} · ${task.start} → ${task.end}"
@@ -1263,7 +1263,7 @@ export class GanttChart extends LitElement {
   }
 
   private renderTaskBarContent(task: GanttTask, color: string, width: number) {
-    const content = this.options.taskBarTemplate?.({ task, color, width, kind: 'task' });
+    const content = this.options.taskBarTemplate?.({ task, color, width, durationDays: this.getTaskDurationDays(task), kind: 'task' });
     return html`<span class="bar-label">${task.name}</span>${content !== undefined ? html`<span class="task-bar-template">${content}</span>` : nothing}`;
   }
 
@@ -2006,7 +2006,7 @@ export class GanttChart extends LitElement {
       case 'mode': return task.mode || (task.type === 'milestone' ? this.t('milestone') : task.type === 'parent' ? this.t('automatic') : this.t('manual'));
       case 'code': return this.renderTaskCodes.get(task.id) || task.code || task.id;
       case 'name': return task.name;
-      case 'duration': return task.metadata?.duration ?? diffDays(task.start, task.end);
+      case 'duration': return this.getTaskDurationDays(task);
       case 'start': return task.start;
       case 'end': return task.end;
       case 'costTotal': return this.getTaskCost(task);
@@ -2016,6 +2016,11 @@ export class GanttChart extends LitElement {
       case 'quantityPerDay': return task.quantityPerDay ?? task.metadata?.quantityPerDay ?? '';
       default: return task.fields?.[column.key] ?? task.metadata?.[column.key] ?? '';
     }
+  }
+
+  private getTaskDurationDays(task: GanttTask): number {
+    const configuredDuration = Number(task.metadata?.duration);
+    return Number.isFinite(configuredDuration) ? configuredDuration : diffDays(task.start, task.end);
   }
 
   private formatColumnValue(value: unknown, column: GanttColumn, task: GanttTask): string {

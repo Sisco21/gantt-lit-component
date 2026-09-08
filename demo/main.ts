@@ -50,9 +50,9 @@ const demoOptions: GanttOptions = {
   showToday: true,
   showDependencies: true,
   taskEditorMode: 'built-in',
-  taskBarTemplate: ({ task, kind }) => kind === 'summary'
+  taskBarTemplate: ({ task, kind, durationDays }) => kind === 'summary'
     ? html`${new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 }).format(summaryCostWithCoefficient(task))} €`
-    : html`${task.progress}%`,
+    : html`${durationDays} j ☝ · ${task.progress}%`,
   taskColumns: [
     { key: 'code', label: 'Code1', width: 64 },
     { key: 'name', label: 'Task name', width: 230, required: true },
