@@ -2034,30 +2034,35 @@ export class GanttChart extends LitElement {
 
   private getResourceTotalQuantity(resource: GanttResource): number {
     const daily = resource.quantityByDate;
-    if (daily && Object.keys(daily).length) return Object.values(daily).reduce((total, value) => total + (Number(value) || 0), 0);
-    return Number(resource.totalQuantity ?? resource.quantity) || 0;
+    if (daily && Object.keys(daily).length) return this.roundQuantity(Object.values(daily).reduce((total, value) => total + (Number(value) || 0), 0));
+    return this.roundQuantity(Number(resource.totalQuantity ?? resource.quantity) || 0);
+  }
+
+  /** Quantities are stored to two decimals; normalize sums to avoid binary floating-point artefacts. */
+  private roundQuantity(value: number): number {
+    return Math.round((value + Number.EPSILON) * 100) / 100;
   }
 
   private createDistributedQuantities(start: string, end: string, requestedTotal: number, resource?: GanttResource): Record<string, number> | undefined {
-    const total = Number.isFinite(requestedTotal) && requestedTotal > 0 ? Number(requestedTotal.toFixed(2)) : 0;
+    const total = Number.isFinite(requestedTotal) && requestedTotal > 0 ? this.roundQuantity(requestedTotal) : 0;
     if (!total) return undefined;
     const dates = Array.from({ length: Math.max(1, diffDays(start, end) + 1) }, (_, index) => this.addDays(start, index));
     const workingDates = resource ? dates.filter(date => this.isResourceWorkingDay(resource, parseDateOnly(date))) : dates;
     if (!workingDates.length) return undefined;
     const days = workingDates.length;
-    const amountPerDay = Number((total / days).toFixed(2));
+    const amountPerDay = this.roundQuantity(total / days);
     const quantityByDate: Record<string, number> = {};
     let allocated = 0;
     for (let index = 0; index < days; index += 1) {
-      const value = index === days - 1 ? Number((total - allocated).toFixed(2)) : amountPerDay;
+      const value = index === days - 1 ? this.roundQuantity(total - allocated) : amountPerDay;
       if (value > 0) quantityByDate[workingDates[index]] = value;
-      allocated += value;
+      allocated = this.roundQuantity(allocated + value);
     }
     return quantityByDate;
   }
 
   private getResourceCost(resource: GanttResource): number {
-    return this.getResourceTotalQuantity(resource) * (Number(resource.unitCost) || 0);
+    return this.roundQuantity(this.getResourceTotalQuantity(resource) * (Number(resource.unitCost) || 0));
   }
 
   private getWorkSegments(task: GanttTask, timelineStart: Date, dayWidth: number): Array<{ left: number; width: number }> | null {
@@ -2089,7 +2094,7 @@ export class GanttChart extends LitElement {
     const resources = task.resources || [];
     if (!resources.some(resource => resource.quantityByDate)) return null;
     return resources.reduce<Record<string, number>>((daily, resource) => {
-      Object.entries(resource.quantityByDate || {}).forEach(([date, value]) => { daily[date] = (daily[date] || 0) + (Number(value) || 0); });
+      Object.entries(resource.quantityByDate || {}).forEach(([date, value]) => { daily[date] = this.roundQuantity((daily[date] || 0) + (Number(value) || 0)); });
       return daily;
     }, {});
   }
@@ -2162,7 +2167,7 @@ export class GanttChart extends LitElement {
    *  Les deux décimales sont conservées et le dernier jour absorbe l'éventuel écart d'arrondi. */
   private distributeResourceTotal(taskId: string, resourceId: string, rawValue: string): void {
     const requestedTotal = Number(rawValue);
-    const total = Number.isFinite(requestedTotal) && requestedTotal > 0 ? Number(requestedTotal.toFixed(2)) : 0;
+    const total = Number.isFinite(requestedTotal) && requestedTotal > 0 ? this.roundQuantity(requestedTotal) : 0;
     const next = this.getFlatTasks().map(task => {
       if (task.id !== taskId) return task;
       const resources = (task.resources || []).map(resource => resource.id === resourceId

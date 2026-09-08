@@ -8,14 +8,18 @@ function getGantt(): GanttChart | null {
   return document.querySelector('gantt-chart') as GanttChart | null;
 }
 
+function roundQuantity(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 function resourceQuantity(resource: GanttResource): number {
   const daily = resource.quantityByDate ? Object.values(resource.quantityByDate).reduce((total, value) => total + Number(value || 0), 0) : 0;
-  return daily || Number(resource.totalQuantity ?? resource.quantity) || 0;
+  return roundQuantity(daily || Number(resource.totalQuantity ?? resource.quantity) || 0);
 }
 
 function resourceCostWithCoefficient(resource: GanttResource): number {
   const coefficient = Number(resource.metadata?.coefficient ?? 1);
-  return resourceQuantity(resource) * Number(resource.unitCost || 0) * coefficient;
+  return roundQuantity(resourceQuantity(resource) * Number(resource.unitCost || 0) * coefficient);
 }
 
 function taskCostWithCoefficient(task: GanttTask): number {
