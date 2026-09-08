@@ -26,6 +26,72 @@ function resourceCostWithCoefficient(resource: GanttResource): number {
   return roundQuantity(resourceQuantity(resource) * Number(resource.unitCost || 0) * coefficient);
 }
 
+const LARGE_DEMO_PHASES = 50;
+const LARGE_DEMO_TASKS_PER_PHASE = 30;
+const LARGE_DEMO_TASK_COUNT = LARGE_DEMO_PHASES * (LARGE_DEMO_TASKS_PER_PHASE + 1);
+
+function demoDate(offset: number): string {
+  const date = new Date(Date.UTC(2026, 0, 5));
+  date.setUTCDate(date.getUTCDate() + offset);
+  return date.toISOString().slice(0, 10);
+}
+
+/** A deterministic, sizeable data set for checking rendering and scrolling performance. */
+function createLargeDemoProject(): GanttData {
+  const tasks: GanttTask[] = [];
+  const dependencies: NonNullable<GanttData['dependencies']> = [];
+
+  for (let phaseIndex = 0; phaseIndex < LARGE_DEMO_PHASES; phaseIndex += 1) {
+    const phaseId = `performance-phase-${phaseIndex + 1}`;
+    const phaseOffset = phaseIndex * 5;
+    tasks.push({
+      id: phaseId,
+      name: `Phase ${String(phaseIndex + 1).padStart(2, '0')} — Performance sample`,
+      code: `${phaseIndex + 1}`,
+      start: demoDate(phaseOffset),
+      end: demoDate(phaseOffset + 43),
+      progress: (phaseIndex * 7) % 101,
+      parentId: null,
+      type: 'parent',
+    });
+
+    let predecessorId: string | undefined;
+    for (let taskIndex = 0; taskIndex < LARGE_DEMO_TASKS_PER_PHASE; taskIndex += 1) {
+      const id = `performance-${phaseIndex + 1}-${taskIndex + 1}`;
+      const startOffset = phaseOffset + (taskIndex % 10) * 4;
+      const duration = 2 + taskIndex % 5;
+      tasks.push({
+        id,
+        name: `Work package ${phaseIndex + 1}.${taskIndex + 1}`,
+        code: `${phaseIndex + 1}.${taskIndex + 1}`,
+        start: demoDate(startOffset),
+        end: demoDate(startOffset + duration),
+        progress: (phaseIndex * 13 + taskIndex * 9) % 101,
+        parentId: phaseId,
+        type: 'task',
+        resources: taskIndex % 3 === 0 ? [{
+          id: `resource-${id}`,
+          name: taskIndex % 2 ? 'Installation crew' : 'Site equipment',
+          type: 'work',
+          unitCost: taskIndex % 2 ? 68 : 115,
+          quantity: 1,
+          maxUnits: taskIndex % 2 ? 4 : 2,
+          calendarId: 'weekday',
+        }] : undefined,
+      });
+      if (predecessorId && taskIndex % 2 === 0) dependencies.push({ from: predecessorId, to: id, type: 'finish-to-start' });
+      predecessorId = id;
+    }
+  }
+
+  return {
+    name: `Performance sample — ${LARGE_DEMO_TASK_COUNT.toLocaleString('fr-FR')} tasks`,
+    tasks,
+    dependencies,
+    calendars: [{ id: 'weekday', name: 'Weekdays', workingDays: [1, 2, 3, 4, 5] }],
+  };
+}
+
 function taskCostWithCoefficient(task: GanttTask): number {
   return (task.resources || []).reduce((total, resource) => total + resourceCostWithCoefficient(resource), 0);
 }
@@ -298,20 +364,36 @@ document.getElementById('btn-mpp')?.addEventListener('click', () => {
   (document.getElementById('mpp-input') as HTMLInputElement).click();
 });
 
-function setLoading(isLoading: boolean): void {
+function setLoading(isLoading: boolean, description = 'Préparation des données exemple…'): void {
   const dialog = document.getElementById('loading-dialog') as HTMLDialogElement | null;
   const sampleButton = document.getElementById('btn-sample') as HTMLButtonElement | null;
+  const largeSampleButton = document.getElementById('btn-large-sample') as HTMLButtonElement | null;
   if (sampleButton) sampleButton.disabled = isLoading;
+  if (largeSampleButton) largeSampleButton.disabled = isLoading;
+  const descriptionElement = document.getElementById('loading-description');
+  if (descriptionElement) descriptionElement.textContent = description;
   if (!dialog) return;
   if (isLoading && !dialog.open) dialog.showModal();
   if (!isLoading && dialog.open) dialog.close();
 }
 
+/** Lets the native dialog reach the screen before synchronous Gantt work begins. */
+function waitForLoadingPaint(): Promise<void> {
+  return new Promise(resolve => window.requestAnimationFrame(() => window.requestAnimationFrame(() => resolve())));
+}
+
+function waitForMinimumLoadingTime(startedAt: number, minimumMs = 500): Promise<void> {
+  const remaining = minimumMs - (performance.now() - startedAt);
+  return remaining > 0 ? new Promise(resolve => window.setTimeout(resolve, remaining)) : Promise.resolve();
+}
+
 async function loadSampleData(): Promise<void> {
+  const loadingStartedAt = performance.now();
   setLoading(true);
   try {
+    await waitForLoadingPaint();
     // Demo-only latency: makes the loading state easy to evaluate in an integration.
-    await new Promise<void>(resolve => window.setTimeout(resolve, 500));
+    await waitForMinimumLoadingTime(loadingStartedAt);
     getGantt()?.setData(structuredClone(sampleProject));
     showStatus('Données exemple chargées', 'success');
   } finally {
@@ -321,6 +403,27 @@ async function loadSampleData(): Promise<void> {
 
 document.getElementById('btn-sample')?.addEventListener('click', () => {
   void loadSampleData();
+});
+
+async function loadLargeSampleData(): Promise<void> {
+  const loadingStartedAt = performance.now();
+  setLoading(true, `Génération de ${LARGE_DEMO_TASK_COUNT.toLocaleString('fr-FR')} tâches et de leurs liens…`);
+  try {
+    await waitForLoadingPaint();
+    const startedAt = performance.now();
+    const gantt = getGantt();
+    gantt?.setData(createLargeDemoProject());
+    await gantt?.updateComplete;
+    await waitForMinimumLoadingTime(loadingStartedAt);
+    const elapsed = Math.round(performance.now() - startedAt);
+    showStatus(`Grand exemple chargé : ${LARGE_DEMO_TASK_COUNT.toLocaleString('fr-FR')} tâches en ${elapsed} ms`, 'success');
+  } finally {
+    setLoading(false);
+  }
+}
+
+document.getElementById('btn-large-sample')?.addEventListener('click', () => {
+  void loadLargeSampleData();
 });
 
 document.getElementById('btn-reset')?.addEventListener('click', () => {

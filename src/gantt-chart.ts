@@ -251,7 +251,7 @@ export class GanttChart extends LitElement {
     }
 
     .task-pane { grid-column: 1; grid-row: 2; min-width: 0; overflow-x: auto; overflow-y: clip; scrollbar-gutter: stable; scrollbar-width: none; }
-    .task-content { width: 100%; min-width: var(--task-columns-width); }
+    .task-content { position: relative; width: 100%; min-width: var(--task-columns-width); }
     .timeline-pane { grid-column: 2; grid-row: 2; min-width: 0; position: relative; overflow: hidden; }
     .timeline-scroll { width: 100%; overflow-x: auto; overflow-y: clip; scrollbar-gutter: stable; scrollbar-width: none; }
     .timeline-scroll.pan-enabled { cursor: grab; touch-action: none; }
@@ -333,13 +333,14 @@ export class GanttChart extends LitElement {
     .day.week-start { border-left: 2px solid var(--gantt-border); }
 
     .task-row, .timeline-row {
-      position: relative;
+      position: absolute;
+      left: 0;
       height: ${ROW_HEIGHT}px;
       border-bottom: 1px solid var(--gantt-grid-line);
       background-color: var(--gantt-row);
     }
 
-    .task-row { position: relative; z-index: 5; overflow: hidden; border-right: 1px solid var(--gantt-border); cursor: pointer; }
+    .task-row { z-index: 5; width: 100%; overflow: hidden; border-right: 1px solid var(--gantt-border); cursor: pointer; }
     .task-row.alt, .timeline-row.alt { background-color: var(--gantt-row-alt); }
     .task-row:hover, .task-row.selected { background-color: var(--gantt-selection); color: var(--gantt-selection-foreground); }
     .task-row.drop-target { box-shadow: inset 0 0 0 2px #60a5fa; }
@@ -356,7 +357,7 @@ export class GanttChart extends LitElement {
     .task-focus { position: absolute; top: 50%; right: 3px; display: flex; align-items: center; justify-content: center; width: 21px; height: 21px; padding: 0; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--gantt-muted); transform: translateY(-50%); }
     .task-focus:hover, .task-focus:focus-visible { border-color: var(--gantt-control-border); background: var(--gantt-control-hover); color: var(--gantt-blue); outline: 0; }
     .task-focus svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.7; }
-    .timeline-row { overflow: hidden; background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(var(--day-width) - 1px), var(--gantt-grid-line) calc(var(--day-width) - 1px), var(--gantt-grid-line) var(--day-width)); }
+    .timeline-row { width: 100%; overflow: hidden; background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(var(--day-width) - 1px), var(--gantt-grid-line) calc(var(--day-width) - 1px), var(--gantt-grid-line) var(--day-width)); }
 
     .today-line { position: absolute; top: var(--timeline-header-height, ${HEADER_HEIGHT}px); bottom: 0; z-index: 3; width: 2px; background: var(--gantt-red); opacity: .75; pointer-events: none; }
     .today-label { position: absolute; top: 4px; left: 5px; color: var(--gantt-red); font-size: 10px; font-weight: 700; white-space: nowrap; }
@@ -549,6 +550,9 @@ export class GanttChart extends LitElement {
   private numberFormatterLocale = '';
   private resourceTimelineViewport = { scrollLeft: 0, width: 0 };
   private resourceTimelineDayWidth = 24;
+  private ganttViewport = { scrollTop: 0, height: 0 };
+  private ganttViewportFrame?: number;
+  private ganttViewportResizeObserver?: ResizeObserver;
   private barDrag?: {
     taskId: string;
     mode: 'move' | 'resize-start' | 'resize-end';
@@ -580,7 +584,17 @@ export class GanttChart extends LitElement {
     document.removeEventListener('keydown', this.handleKeyDown);
     this.finishBarDrag();
     this.finishGanttPan();
+    if (this.ganttViewportFrame !== undefined) window.cancelAnimationFrame(this.ganttViewportFrame);
+    this.ganttViewportResizeObserver?.disconnect();
     super.disconnectedCallback();
+  }
+
+  firstUpdated(): void {
+    const viewport = this.renderRoot.querySelector<HTMLElement>('.gantt-viewport');
+    if (!viewport) return;
+    this.ganttViewportResizeObserver = new ResizeObserver(() => this.updateGanttViewport());
+    this.ganttViewportResizeObserver.observe(viewport);
+    this.updateGanttViewport(viewport.scrollTop, viewport.clientHeight);
   }
 
   updated(changed: Map<string, unknown>): void {
@@ -600,6 +614,7 @@ export class GanttChart extends LitElement {
     const flatTasks = this.getFlatTasks();
     this.prepareRenderCaches(flatTasks);
     const visibleTasks = getVisibleTasks(this.tasks);
+    const virtualRows = this.getVirtualTaskRows(visibleTasks);
     const selectedTask = this.selectedTaskId ? this.renderTaskIndex.get(this.selectedTaskId) || null : null;
     const range = this.alignRangeToWeeks(getDateRange(flatTasks));
     const totalDays = Math.max(31, diffDays(range.start, range.end) + 1);
@@ -645,7 +660,7 @@ export class GanttChart extends LitElement {
             ${this.statusMessage ? html`<span class="status ${this.statusKind}">${this.statusMessage}</span>` : nothing}
           </div>
         <div class="split-viewport" @wheel=${this.handleWheel}>
-          <div class="gantt-viewport">
+          <div class="gantt-viewport" @scroll=${this.handleGanttViewportScroll}>
             <div class="gantt-scrollbar-dock" aria-label="Défilement horizontal du Gantt">
               <div class="gantt-horizontal-scroll" @scroll=${this.syncTaskGridScroll}><div class="gantt-scroll-spacer"></div></div>
               <div class="gantt-horizontal-scroll" @scroll=${this.syncTimelineGridScroll}><div class="gantt-scroll-spacer timeline"></div></div>
@@ -654,17 +669,17 @@ export class GanttChart extends LitElement {
               <div class="task-header"><div class="task-columns">${this.getColumns().map(column => html`<div class="task-column" style="width:${this.getColumnWidth(column)}px">${column.label}<span class="task-column-resizer" role="separator" tabindex="0" aria-label="Redimensionner ${column.label}" @pointerdown=${(event: PointerEvent) => this.startTaskColumnResize(event, column)}></span></div>`)}</div></div>
               ${this.renderTimelineHeader(range.start, totalDays, dayWidth)}
               <div class="task-pane" @scroll=${this.syncTaskHeaderScroll}>
-                <div class="task-content">
-                  ${visibleTasks.length ? visibleTasks.map((task, index) => this.renderTaskRow(task, index, searchMatches, currentSearchId)) : html`<div class="empty">${this.t('noTasks')}</div>`}
+                <div class="task-content" style="height:${Math.max(1, visibleTasks.length) * ROW_HEIGHT}px">
+                  ${visibleTasks.length ? virtualRows.rows.map(({ task, index }) => this.renderTaskRow(task, index, searchMatches, currentSearchId)) : html`<div class="empty">${this.t('noTasks')}</div>`}
                 </div>
               </div>
               <div class="timeline-pane">
                 <div class="timeline-scroll ${this.isGanttPanEnabled() ? 'pan-enabled' : ''}" @scroll=${this.syncTimelineHeaderScroll} @pointerdown=${this.startGanttPan}>
-                  <div class="timeline-content" style="width:${timelineWidth}px">
+                  <div class="timeline-content" style="width:${timelineWidth}px; height:${Math.max(1, visibleTasks.length) * ROW_HEIGHT}px">
                     ${this.renderNonWorkingDayBands(range.start, totalDays, dayWidth)}
                     ${this.renderWeekDividers(range.start, totalDays, dayWidth)}
-                    ${visibleTasks.length ? visibleTasks.map((task, index) => this.renderTimelineRow(task, index, range.start, dayWidth, searchMatches)) : html`<div class="empty">${this.t('noPlanningData')}</div>`}
-                    ${this.renderDependencies(visibleTasks, this.renderTaskIndex, range.start, dayWidth)}
+                    ${visibleTasks.length ? virtualRows.rows.map(({ task, index }) => this.renderTimelineRow(task, index, range.start, dayWidth, searchMatches)) : html`<div class="empty">${this.t('noPlanningData')}</div>`}
+                    ${this.renderDependencies(visibleTasks, this.renderTaskIndex, range.start, dayWidth, virtualRows.start, virtualRows.end)}
                     ${this.renderTodayMarker(range.start, dayWidth, totalDays)}
                   </div>
                 </div>
@@ -845,11 +860,9 @@ export class GanttChart extends LitElement {
 
   private scrollTaskIntoView(taskId: string): void {
     const viewport = this.renderRoot.querySelector<HTMLElement>('.gantt-viewport');
-    const row = Array.from(this.renderRoot.querySelectorAll<HTMLElement>('.task-row')).find(element => element.dataset.taskId === taskId);
-    if (!viewport || !row) return;
-    const viewportBounds = viewport.getBoundingClientRect();
-    const rowBounds = row.getBoundingClientRect();
-    const top = viewport.scrollTop + rowBounds.top - viewportBounds.top - (viewport.clientHeight - rowBounds.height) / 2;
+    const rowIndex = getVisibleTasks(this.tasks).findIndex(task => task.id === taskId);
+    if (!viewport || rowIndex < 0) return;
+    const top = this.getTimelineHeaderHeight() + rowIndex * ROW_HEIGHT - (viewport.clientHeight - ROW_HEIGHT) / 2;
     viewport.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
 
     const task = this.findTask(taskId);
@@ -859,6 +872,42 @@ export class GanttChart extends LitElement {
     const range = this.alignRangeToWeeks(getDateRange(this.getFlatTasks()));
     const taskCenterX = this.dateToX(task.start, range.start, dayWidth) + (diffDays(task.start, task.end) + 1) * dayWidth / 2;
     timeline.scrollTo({ left: Math.max(0, taskCenterX - timeline.clientWidth / 2), behavior: 'smooth' });
+  }
+
+  /** Keeps only the rows around the viewport in the DOM while preserving the full scroll height. */
+  private getVirtualTaskRows(tasks: GanttTask[]): {
+    start: number;
+    end: number;
+    rows: Array<{ task: GanttTask; index: number }>;
+  } {
+    const overscan = 8;
+    // Before the first ResizeObserver callback, render a conservative initial window.
+    const viewportHeight = this.ganttViewport.height || ROW_HEIGHT * 12;
+    const start = Math.max(0, Math.floor(this.ganttViewport.scrollTop / ROW_HEIGHT) - overscan);
+    const end = Math.min(tasks.length, Math.ceil((this.ganttViewport.scrollTop + viewportHeight) / ROW_HEIGHT) + overscan);
+    return {
+      start,
+      end,
+      rows: tasks.slice(start, end).map((task, offset) => ({ task, index: start + offset })),
+    };
+  }
+
+  private handleGanttViewportScroll = (event: Event): void => {
+    const viewport = event.currentTarget as HTMLElement;
+    if (this.ganttViewportFrame !== undefined) return;
+    this.ganttViewportFrame = window.requestAnimationFrame(() => {
+      this.ganttViewportFrame = undefined;
+      this.updateGanttViewport(viewport.scrollTop, viewport.clientHeight);
+    });
+  };
+
+  private updateGanttViewport(scrollTop?: number, height?: number): void {
+    const viewport = this.renderRoot.querySelector<HTMLElement>('.gantt-viewport');
+    const nextScrollTop = scrollTop ?? viewport?.scrollTop ?? 0;
+    const nextHeight = height ?? viewport?.clientHeight ?? 0;
+    if (nextScrollTop === this.ganttViewport.scrollTop && nextHeight === this.ganttViewport.height) return;
+    this.ganttViewport = { scrollTop: nextScrollTop, height: nextHeight };
+    this.requestUpdate();
   }
 
   updateTask(taskId: string, patch: Partial<GanttTask>): void {
@@ -939,7 +988,7 @@ export class GanttChart extends LitElement {
     const depth = this.getDepth(task);
     const selected = task.id === this.selectedTaskId;
     return html`
-      <div class="task-row ${selected ? 'selected' : ''} ${index % 2 ? 'alt' : ''} ${searchMatches.has(task.id) ? 'search-match' : ''} ${task.id === currentSearchId ? 'search-current' : ''}" data-task-id=${task.id}
+      <div class="task-row ${selected ? 'selected' : ''} ${index % 2 ? 'alt' : ''} ${searchMatches.has(task.id) ? 'search-match' : ''} ${task.id === currentSearchId ? 'search-current' : ''}" style="top:${index * ROW_HEIGHT}px" data-task-id=${task.id}
            draggable="true"
            @click=${() => this.focusTaskFromGrid(task.id)}
            @dragstart=${(event: DragEvent) => this.handleDragStart(event, task.id)}
@@ -1207,7 +1256,7 @@ export class GanttChart extends LitElement {
     const color = this.getTaskColor(task);
     const selected = task.id === this.selectedTaskId;
     return html`
-      <div class="timeline-row ${index % 2 ? 'alt' : ''} ${searchMatches.has(task.id) ? 'search-match' : ''}" @contextmenu=${(event: MouseEvent) => this.openTaskContextMenu(task.id, event)}>
+      <div class="timeline-row ${index % 2 ? 'alt' : ''} ${searchMatches.has(task.id) ? 'search-match' : ''}" style="top:${index * ROW_HEIGHT}px" @contextmenu=${(event: MouseEvent) => this.openTaskContextMenu(task.id, event)}>
         ${this.renderTaskBar(task, left, width, color, selected, start, dayWidth)}
       </div>
     `;
@@ -1334,7 +1383,14 @@ export class GanttChart extends LitElement {
       : nothing);
   }
 
-  private renderDependencies(visibleTasks: GanttTask[], taskById: Map<string, GanttTask>, start: Date, dayWidth: number) {
+  private renderDependencies(
+    visibleTasks: GanttTask[],
+    taskById: Map<string, GanttTask>,
+    start: Date,
+    dayWidth: number,
+    firstVisibleRow = 0,
+    lastVisibleRow = visibleTasks.length,
+  ) {
     if (this.options.showDependencies === false || !this.dependencies.length) return nothing;
     const rows = new Map(visibleTasks.map((task, index) => [task.id, index]));
     const paths = this.dependencies.flatMap(dependency => {
@@ -1343,6 +1399,9 @@ export class GanttChart extends LitElement {
       const fromRow = rows.get(dependency.from);
       const toRow = rows.get(dependency.to);
       if (!from || !to || fromRow === undefined || toRow === undefined) return [];
+      // A connector is relevant when it begins, ends, or passes through the
+      // virtual window. Its absolute coordinates still preserve its complete path.
+      if (Math.max(fromRow, toRow) < firstVisibleRow || Math.min(fromRow, toRow) >= lastVisibleRow) return [];
       const type = dependency.type || 'finish-to-start';
       const fromX = this.dateToX(type === 'start-to-start' || type === 'start-to-finish' ? from.start : this.addDays(from.end, 1), start, dayWidth);
       const toX = this.dateToX(type === 'finish-to-finish' || type === 'start-to-finish' ? this.addDays(to.end, 1) : to.start, start, dayWidth);
@@ -1775,6 +1834,19 @@ export class GanttChart extends LitElement {
   ): GanttTask[] {
     const next = baseTasks.map(task => ({ ...task }));
     const byId = new Map(next.map(task => [task.id, task]));
+    const childrenByParent = new Map<string, string[]>();
+    const outgoingBySource = new Map<string, GanttDependency[]>();
+    next.forEach(task => {
+      if (!task.parentId) return;
+      const children = childrenByParent.get(task.parentId) || [];
+      children.push(task.id);
+      childrenByParent.set(task.parentId, children);
+    });
+    this.dependencies.forEach(dependency => {
+      const dependencies = outgoingBySource.get(dependency.from) || [];
+      dependencies.push(dependency);
+      outgoingBySource.set(dependency.from, dependencies);
+    });
     const root = byId.get(taskId);
     if (!root) return next;
 
@@ -1805,7 +1877,7 @@ export class GanttChart extends LitElement {
       task.start = this.addDays(task.start, days);
       task.end = this.addDays(task.end, days);
       shiftResourceDates(task, days);
-      next.filter(candidate => candidate.parentId === rootId).forEach(child => shiftSubtree(child.id, days));
+      childrenByParent.get(rootId)?.forEach(childId => shiftSubtree(childId, days));
     };
 
     if (mode === 'move') {
@@ -1823,7 +1895,7 @@ export class GanttChart extends LitElement {
       const source = byId.get(sourceId);
       if (!source) return;
 
-      for (const dependency of this.dependencies.filter(item => item.from === sourceId)) {
+      for (const dependency of outgoingBySource.get(sourceId) || []) {
         const successor = byId.get(dependency.to);
         if (!successor) continue;
         const lag = dependency.lagDays || 0;
@@ -1852,20 +1924,72 @@ export class GanttChart extends LitElement {
    * ne peut pas pointer vers une tâche qui commence avant la fin de sa source. */
   private applyInitialDependencySchedule(tasks: GanttTask[]): GanttTask[] {
     if (this.options.autoSchedule === false || !this.dependencies.length) return tasks;
-    let scheduled = tasks.map(task => ({ ...task }));
-    const sourceIds = [...new Set(this.dependencies.map(dependency => dependency.from))];
+    const scheduled = tasks.map(task => ({ ...task }));
+    const byId = new Map(scheduled.map(task => [task.id, task]));
+    const childrenByParent = new Map<string, string[]>();
+    const outgoingBySource = new Map<string, GanttDependency[]>();
+    const incomingCount = new Map<string, number>();
+    const dependencyTaskIds = new Set<string>();
 
-    // Plusieurs passes couvrent les chaînes de dépendances sans devoir supposer
-    // que les tâches arrivent dans un ordre topologique dans le fichier importé.
-    for (let pass = 0; pass < this.dependencies.length; pass += 1) {
-      const before = scheduled.map(task => `${task.id}:${task.start}:${task.end}`).join('|');
-      for (const sourceId of sourceIds) {
-        const source = scheduled.find(task => task.id === sourceId);
-        if (!source) continue;
-        scheduled = this.applyScheduledDates(scheduled, source.id, source.start, source.end, 'move');
+    scheduled.forEach(task => {
+      if (!task.parentId) return;
+      const children = childrenByParent.get(task.parentId) || [];
+      children.push(task.id);
+      childrenByParent.set(task.parentId, children);
+    });
+    this.dependencies.forEach(dependency => {
+      if (!byId.has(dependency.from) || !byId.has(dependency.to)) return;
+      const dependencies = outgoingBySource.get(dependency.from) || [];
+      dependencies.push(dependency);
+      outgoingBySource.set(dependency.from, dependencies);
+      incomingCount.set(dependency.to, (incomingCount.get(dependency.to) || 0) + 1);
+      dependencyTaskIds.add(dependency.from);
+      dependencyTaskIds.add(dependency.to);
+    });
+
+    const shiftResourceDates = (task: GanttTask, days: number): void => {
+      if (!days || !task.resources?.length) return;
+      task.resources = task.resources.map(resource => {
+        if (!resource.quantityByDate) return resource;
+        const quantityByDate = Object.entries(resource.quantityByDate).reduce<Record<string, number>>((shifted, [date, quantity]) => {
+          shifted[this.addDays(date, days)] = quantity;
+          return shifted;
+        }, {});
+        return { ...resource, quantityByDate, totalQuantity: undefined, cost: undefined };
+      });
+    };
+    const shiftSubtree = (taskId: string, days: number): void => {
+      const task = byId.get(taskId);
+      if (!task || !days) return;
+      task.start = this.addDays(task.start, days);
+      task.end = this.addDays(task.end, days);
+      shiftResourceDates(task, days);
+      childrenByParent.get(taskId)?.forEach(childId => shiftSubtree(childId, days));
+    };
+
+    // Process each acyclic dependency once in topological order. The previous
+    // implementation replayed the whole graph for every link, causing a large
+    // quadratic cost as soon as an imported schedule had many dependencies.
+    const ready = [...dependencyTaskIds].filter(taskId => !incomingCount.get(taskId));
+    while (ready.length) {
+      const sourceId = ready.shift()!;
+      const source = byId.get(sourceId);
+      if (!source) continue;
+      for (const dependency of outgoingBySource.get(sourceId) || []) {
+        const successor = byId.get(dependency.to);
+        if (!successor) continue;
+        const lag = dependency.lagDays || 0;
+        const requiredDate = (dependency.type || 'finish-to-start') === 'start-to-start' || (dependency.type || 'finish-to-start') === 'start-to-finish'
+          ? this.addDays(source.start, lag)
+          : this.addDays(source.end, (dependency.type || 'finish-to-start') === 'finish-to-start' ? lag + 1 : lag);
+        const shift = dependency.type === 'finish-to-finish' || dependency.type === 'start-to-finish'
+          ? diffDays(successor.end, requiredDate)
+          : diffDays(successor.start, requiredDate);
+        if (shift > 0) shiftSubtree(successor.id, shift);
+        const remaining = (incomingCount.get(successor.id) || 0) - 1;
+        incomingCount.set(successor.id, remaining);
+        if (remaining === 0) ready.push(successor.id);
       }
-      const after = scheduled.map(task => `${task.id}:${task.start}:${task.end}`).join('|');
-      if (before === after) break;
     }
     return scheduled;
   }

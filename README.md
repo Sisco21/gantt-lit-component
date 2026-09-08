@@ -331,6 +331,8 @@ gantt.setOptions({
 
 The user can resize visible columns from their boundaries, open the column picker to hide optional columns, and use the toolbar to expand or collapse all parents.
 
+The bundled demo also includes **Grand exemple · 1 550 tâches**. It generates 50 parent phases, 1,500 work packages, resource assignments, and dependency links in the browser, then displays the load time. It is intended for manual rendering and scrolling checks.
+
 ### Pan the timeline from empty space
 
 Set `pan.enabled` to let users hold the left mouse button on an empty timeline cell and drag the plan. The gesture never starts on a task bar, resize handle, dependency, or separator, so task editing stays unchanged. `axis: 'horizontal'` is the default; use `axis: 'both'` to move through the task rows vertically at the same time. Panning is disabled by default to keep existing integrations behaviour-compatible.
