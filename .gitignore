@@ -20,3 +20,6 @@ dist/
 # Coverage
 coverage/
 .nyc_output/
+
+# Miscellaneous
+.pnpm-store/

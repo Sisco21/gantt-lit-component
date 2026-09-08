@@ -18,6 +18,24 @@ export type GanttFieldValue = string | number | boolean | null;
 
 export type GanttResourceType = 'work' | 'material' | 'expense';
 
+/** Working hours for one day. Times use the local calendar convention, HH:mm. */
+export interface GanttWorkingRange {
+  start: string;
+  end: string;
+}
+
+/** Project or resource calendar. Exceptions take precedence over the weekly rule. */
+export interface GanttCalendar {
+  id: string;
+  name: string;
+  /** UTC day numbers: 0 = Sunday, 1 = Monday. Defaults to the project calendar. */
+  workingDays?: number[];
+  /** Optional future-ready hourly ranges per weekday. */
+  hours?: Partial<Record<number, GanttWorkingRange[]>>;
+  /** Per-date overrides keyed by YYYY-MM-DD. */
+  exceptions?: Record<string, 'working' | 'non-working'>;
+}
+
 export type DependencyType =
   | 'finish-to-start'
   | 'start-to-start'
@@ -41,6 +59,7 @@ export interface GanttTask {
   quantityPerDay?: number;
   fields?: Record<string, GanttFieldValue>;
   resources?: GanttResource[];
+  /** Persisted task-bar colour. A default is added automatically when the task is imported or created. */
   color?: string;
   children?: GanttTask[];
   collapsed?: boolean;
@@ -54,6 +73,10 @@ export interface GanttResource {
   unit?: string;
   unitCost: number;
   quantity: number;
+  /** Calendar used to validate daily quantities and distribute totals. */
+  calendarId?: string;
+  /** Optional daily capacity, supplied by a resource catalogue when available. */
+  maxUnits?: number;
   /** Quantities keyed by YYYY-MM-DD. A missing/zero day creates a visible gap. */
   quantityByDate?: Record<string, number>;
   totalQuantity?: number;
@@ -69,6 +92,8 @@ export interface GanttResourceReference {
   unit?: string;
   unitCost?: number;
   quantity?: number;
+  calendarId?: string;
+  maxUnits?: number;
   metadata?: Record<string, GanttFieldValue>;
 }
 
@@ -89,6 +114,8 @@ export interface GanttData {
   name?: string;
   tasks: GanttTask[];
   dependencies?: GanttDependency[];
+  /** Calendars travel with JSON, local persistence and custom MPP adapters. */
+  calendars?: GanttCalendar[];
   /** Extra project-level data is preserved by JSON and persistence adapters. */
   metadata?: Record<string, unknown>;
 }
@@ -140,6 +167,34 @@ export interface GanttResourceColumn {
 /** Renders the label displayed on a parent-task summary bar. Strings and Lit templates are supported. */
 export type GanttSummaryTemplate = (task: GanttTask) => unknown;
 
+export type GanttTaskBarKind = 'task' | 'summary';
+
+/** Context passed when the host customizes the visible content of a Gantt task bar. */
+export interface GanttTaskBarTemplateContext {
+  task: GanttTask;
+  color: string;
+  width: number;
+  kind: GanttTaskBarKind;
+}
+
+/** Renders the content of a task or summary bar. The bar interactions remain managed by the component. */
+export type GanttTaskBarTemplate = (context: GanttTaskBarTemplateContext) => unknown;
+
+/** Actions exposed to a custom task-editor template rendered inside the component dialog. */
+export interface GanttTaskEditorTemplateContext {
+  task: GanttTask;
+  updateTask: (patch: Partial<GanttTask>) => void;
+  moveTask: (parentId: string | null) => void;
+  addResource: (resource?: Partial<GanttResource>) => void;
+  removeResource: (resourceId: string) => void;
+  addDependency: (fromTaskId: string, type?: DependencyType) => void;
+  removeDependency: (fromTaskId: string) => void;
+  close: () => void;
+}
+
+/** Replaces the built-in task-editor tabs while keeping the component dialog and its persistence flow. */
+export type GanttTaskEditorTemplate = (context: GanttTaskEditorTemplateContext) => unknown;
+
 /** Text displayed by the component. Override only the entries your product needs. */
 export interface GanttTranslations {
   import: string;
@@ -174,6 +229,8 @@ export interface GanttTranslations {
   name: string;
   code: string;
   type: string;
+  color: string;
+  progress: string;
   parent: string;
   root: string;
   start: string;
@@ -199,6 +256,16 @@ export interface GanttTranslations {
   manual: string;
 }
 
+/** Drag-to-pan behaviour for the empty part of the Gantt timeline. */
+export interface GanttPanOptions {
+  /** Enables left-click panning. Disabled by default to preserve existing interactions. */
+  enabled?: boolean;
+  /** Pans horizontally, or horizontally and through the Gantt's vertical task list. */
+  axis?: 'horizontal' | 'both';
+  /** Reserved for future triggers; panning currently starts only from empty timeline space. */
+  trigger?: 'empty-area';
+}
+
 export interface GanttOptions {
   headerWidth?: number;
   /** Optional internal scroll height. Omit to let the component grow naturally. */
@@ -208,18 +275,26 @@ export interface GanttOptions {
   taskColumns?: GanttColumn[];
   /** Columns shown in the resource grid before the remove action. */
   resourceColumns?: GanttResourceColumn[];
-  /** Custom content rendered inside the summary bar of parent tasks. Defaults to the task name. */
+  /** Extra content appended after the task name inside the summary bar of parent tasks. */
   summaryTemplate?: GanttSummaryTemplate;
+  /** Extra content appended after the task name inside task and parent summary bars. */
+  taskBarTemplate?: GanttTaskBarTemplate;
   dayWidth?: number;
   minZoom?: number;
   maxZoom?: number;
   taskColors?: TaskColors;
   showToday?: boolean;
   showDependencies?: boolean;
+  /** Overrides the dependency-line colour without changing other task colours. */
+  dependencyColor?: string;
+  /** Visual stroke used for dependency connectors. Defaults to `solid`. */
+  dependencyLineStyle?: 'solid' | 'dashed';
   /** Reposition dependent tasks when data is loaded. Defaults to true. */
   autoSchedule?: boolean;
   /** Use 'external' to let the host application open its own task editor from onTaskEdit. */
   taskEditorMode?: 'built-in' | 'external';
+  /** Replaces the body of the built-in editor with a host-provided Lit template. */
+  taskEditorTemplate?: GanttTaskEditorTemplate;
   /** IETF locale used for dates, numbers and built-in labels. Defaults to navigator.language. */
   locale?: string;
   /** First day of the displayed week. Uses UTC day numbers: 0 = Sunday, 1 = Monday. Defaults to 1. */
@@ -230,6 +305,8 @@ export interface GanttOptions {
   weekNumbering?: WeekNumbering;
   /** Days to shade as non-working. Uses UTC day numbers: 0 = Sunday, 6 = Saturday. Defaults to [0, 6]. */
   nonWorkingDays?: number[];
+  /** Enables mouse panning from an empty part of the Gantt timeline. */
+  pan?: GanttPanOptions;
   /** Override individual built-in labels after locale selection. */
   translations?: Partial<GanttTranslations>;
   onTaskSelect?: (taskId: string) => void;

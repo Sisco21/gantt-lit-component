@@ -1,5 +1,9 @@
 {
   "name": "Projet Démo",
+  "calendars": [
+    { "id": "crew-weekdays", "name": "Équipe — lundi au vendredi", "workingDays": [1, 2, 3, 4, 5] },
+    { "id": "site-six-days", "name": "Chantier — lundi au samedi", "workingDays": [1, 2, 3, 4, 5, 6] }
+  ],
   "tasks": [
     {
       "id": "1",
@@ -25,10 +29,10 @@
       "quantity": 1,
       "quantityPerDay": 1,
       "resources": [
-        { "id": "resource-1", "name": "Ouvrier qualifié", "type": "1-Personnel", "unit": "J", "unitCost": 400, "quantity": 1, "metadata": { "coefficient": 1.15 },
-          "quantityByDate": { "2026-01-15": 1, "2026-01-16": 1, "2026-01-17": 1, "2026-01-18": 1, "2026-01-19": 1, "2026-01-20": 1, "2026-01-25": 1, "2026-01-26": 1, "2026-01-27": 1, "2026-01-28": 1, "2026-01-29": 1, "2026-01-30": 1, "2026-01-31": 1 } },
-        { "id": "resource-2", "name": "Barrière de chantier", "type": "4-Fourniture", "unit": "U", "unitCost": 50, "quantity": 100, "metadata": { "coefficient": 1.05 },
-          "quantityByDate": { "2026-01-15": 100, "2026-01-16": 100, "2026-01-17": 100, "2026-01-18": 100, "2026-01-19": 100, "2026-01-20": 100, "2026-01-25": 100, "2026-01-26": 100, "2026-01-27": 100, "2026-01-28": 100, "2026-01-29": 100, "2026-01-30": 100, "2026-01-31": 100 } }
+        { "id": "resource-1", "name": "Ouvrier qualifié", "type": "1-Personnel", "unit": "J", "unitCost": 400, "quantity": 1, "calendarId": "crew-weekdays", "maxUnits": 2, "metadata": { "coefficient": 1.15 },
+          "quantityByDate": { "2026-01-15": 2, "2026-01-16": 1, "2026-01-19": 1, "2026-01-20": 1, "2026-01-21": 1, "2026-01-22": 1, "2026-01-23": 1, "2026-01-26": 1, "2026-01-27": 1, "2026-01-28": 1, "2026-01-29": 1, "2026-01-30": 1 } },
+        { "id": "resource-2", "name": "Barrière de chantier", "type": "4-Fourniture", "unit": "U", "unitCost": 50, "quantity": 100, "calendarId": "site-six-days", "maxUnits": 100, "metadata": { "coefficient": 1.05 },
+          "quantityByDate": { "2026-01-15": 100, "2026-01-16": 100, "2026-01-19": 100, "2026-01-20": 100, "2026-01-21": 100, "2026-01-22": 100, "2026-01-23": 100, "2026-01-26": 100, "2026-01-27": 100, "2026-01-28": 100, "2026-01-29": 100, "2026-01-30": 100, "2026-01-31": 100 } }
       ]
     },
     {

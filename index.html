@@ -18,7 +18,14 @@
       <button id="btn-mpp">📥 Import MS Project</button>
       <button id="btn-sample">📋 Charger Exemple</button>
       <button id="btn-reset">🔄 Réinitialiser</button>
-      <button id="btn-theme" type="button" aria-pressed="false">☾ Thème sombre</button>
+      <label class="calendar-control visual-style-control">Style
+        <select id="visual-style" aria-label="Style de démonstration">
+          <option value="material">Material</option>
+          <option value="fluent">Fluent</option>
+          <option value="dark-operations">Opérations sombre</option>
+        </select>
+      </label>
+      <button id="btn-theme" type="button" aria-pressed="false">Passer au thème sombre</button>
       <label class="calendar-control">Début de semaine
         <select id="week-start">
           <option value="1">Lundi</option>
@@ -39,6 +46,14 @@
 
     <input type="file" id="json-input" accept=".json" style="display:none" />
     <input type="file" id="mpp-input" accept=".mpp,.xml" style="display:none" />
+
+    <dialog id="loading-dialog" class="loading-dialog" aria-labelledby="loading-title" aria-live="polite">
+      <div class="loading-dialog-content">
+        <h2 id="loading-title">Chargement du planning</h2>
+        <p>Préparation des données exemple…</p>
+        <progress aria-label="Chargement en cours"></progress>
+      </div>
+    </dialog>
   </div>
 
   <script type="module" src="/demo/main.ts"></script>

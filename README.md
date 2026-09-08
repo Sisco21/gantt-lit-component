@@ -264,6 +264,33 @@ gantt.options = {
 
 With `taskEditorMode: 'external'`, the component calls `onTaskEdit` but does not display its own modal. The context menu, selection, Gantt interactions and change events remain available.
 
+### Replace the built-in editor body with a template
+
+Use `taskEditorTemplate` when the component dialog should remain in place but its three built-in tabs must be replaced by product-specific fields. The callback receives the current task and actions that preserve normal scheduling, resource, dependency and persistence events.
+
+```ts
+import { html } from 'lit';
+
+gantt.setOptions({
+  taskEditorTemplate: ({ task, updateTask, addResource, close }) => html`
+    <label>Work package name
+      <input .value=${task.name}
+        @change=${(event: Event) => updateTask({ name: event.target.value })} />
+    </label>
+    <label>Progress
+      <input type="number" min="0" max="100" .value=${String(task.progress)}
+        @change=${(event: Event) => updateTask({ progress: Number(event.target.value) })} />
+    </label>
+    <div class="task-editor-template-actions">
+      <button @click=${() => addResource({ name: 'New resource', type: 'work' })}>Add resource</button>
+      <button class="primary" @click=${close}>Done</button>
+    </div>
+  `,
+});
+```
+
+The callback can use `updateTask`, `moveTask`, `addResource`, `removeResource`, `addDependency`, `removeDependency` and `close`. Use `taskEditorMode: 'external'` instead when the host application must own the full dialog or drawer.
+
 Useful public editing methods for an external editor are:
 
 | Method | Purpose |
@@ -287,7 +314,10 @@ Call `setOptions()` when configuring a live component; it applies the new settin
 ```ts
 gantt.setOptions({
   autoSchedule: true,
+  dependencyColor: '#7551c8',
+  dependencyLineStyle: 'solid',
   nonWorkingDays: [0, 6], // Sunday and Saturday; use [] to disable shading
+  pan: { enabled: true, axis: 'both', trigger: 'empty-area' },
   taskColumns: [
     { key: 'code', label: 'Code', width: 70 },
     { key: 'name', label: 'Task name', width: 260, required: true },
@@ -301,19 +331,45 @@ gantt.setOptions({
 
 The user can resize visible columns from their boundaries, open the column picker to hide optional columns, and use the toolbar to expand or collapse all parents.
 
+### Pan the timeline from empty space
+
+Set `pan.enabled` to let users hold the left mouse button on an empty timeline cell and drag the plan. The gesture never starts on a task bar, resize handle, dependency, or separator, so task editing stays unchanged. `axis: 'horizontal'` is the default; use `axis: 'both'` to move through the task rows vertically at the same time. Panning is disabled by default to keep existing integrations behaviour-compatible.
+
 ### Summary-bar label
 
-Parent tasks display a summary bar with the task name. Supply `summaryTemplate` when the label must include product-specific information; it can return text or a Lit template. The demo uses this to display the total cost of a phase, including its child tasks.
+Parent tasks display a summary bar with the task name. Supply `summaryTemplate` to append product-specific information; it can return text or a Lit template. The task name stays visible. The demo uses this to display the total cost of a phase, including its child tasks.
 
 ```ts
 import { html } from 'lit';
 
 gantt.setOptions({
-  summaryTemplate: task => html`${task.name} · ${calculatePhaseCost(task)} €`,
+  summaryTemplate: task => html`${calculatePhaseCost(task)} €`,
 });
 ```
 
 The bar colour is exposed as `--gantt-summary`, with a readable default in both built-in themes.
+
+### Customize task bars and colours
+
+Every task has a persisted `color` field. Missing colours are initialized automatically when data is imported or a task is created, so the selected value is included in JSON exports and change events. The built-in task editor also exposes a colour picker.
+
+Use `taskBarTemplate` to append information after the task name inside regular task bars and parent summary bars. The component keeps the task title visible and continues to manage drag, resize, selection and dependency interactions.
+
+```ts
+import { html } from 'lit';
+
+gantt.setOptions({
+  taskBarTemplate: ({ task, color, width, kind }) => kind === 'summary'
+    ? html`${task.metadata?.budget ?? 0} €`
+    : width > 100
+      ? html`${task.progress}%`
+      : '',
+});
+
+gantt.updateTask('task-42', { color: '#7c3aed' });
+```
+
+The template receives the task, its persisted colour, the visible bar width and a `kind` (`task` or `summary`).
 
 ### Add business and calculated columns
 
@@ -379,6 +435,31 @@ gantt.options = {
 
 The first-day setting aligns the timeline to complete weeks and draws a subtle divider at the first day of each displayed week. With `showWeekNumbers`, the component displays a compact calendar-week row below the month header. `first-full-week` matches Microsoft Project-like calendars: the first complete week of the year is W 1 and a week crossing December/January stays attached to the previous year. Set `weekNumbering: 'iso'` for ISO-8601 numbering. Date headers and numeric values are formatted using `locale`.
 
+### Resource calendars
+
+Calendars belong to `GanttData`, so they are preserved in JSON, local persistence and custom project-file adapters. A resource selects one through `calendarId`. The resource grid then shades its closed days on that specific row, blocks edits on those dates and spreads a total quantity only across working dates.
+
+```ts
+gantt.setData({
+  calendars: [
+    { id: 'weekday', name: 'Weekdays', workingDays: [1, 2, 3, 4, 5] },
+    {
+      id: 'site-six-days',
+      name: 'Site, Monday to Saturday',
+      workingDays: [1, 2, 3, 4, 5, 6],
+      exceptions: { '2026-12-25': 'non-working' },
+    },
+  ],
+  tasks: [{
+    id: 'survey', name: 'Survey', start: '2026-12-21', end: '2026-12-31',
+    progress: 0, parentId: null, type: 'task',
+    resources: [{ id: 'crew', name: 'Crew', type: 'work', unitCost: 500, quantity: 1, calendarId: 'weekday', maxUnits: 2 }],
+  }],
+});
+```
+
+`hours` is also available on a calendar for future hourly scheduling, but the current Gantt view remains day-based. Automatic dependency scheduling still uses the project calendar; resource calendars currently govern availability and quantity allocation, not resource leveling.
+
 The component exposes CSS custom properties so a host application can apply its own design system without reaching into the component’s shadow DOM:
 
 ```css
@@ -405,7 +486,14 @@ gantt-chart {
 
 ## Built-in light and dark themes
 
-The component ships with a light theme by default and a dark theme that covers the grid, timeline, menus, editors and input controls. Select it with the `theme` attribute or property:
+The component ships with a light theme by default and a dark theme that covers the grid, timeline, menus, editors and input controls. The Material visual style also includes the Latin Roboto weights 400, 500 and 700; no web-font request or operating-system installation is required. Import the package stylesheet once in the host application so those embedded font files are available:
+
+```ts
+import 'gantt-lit-component/style.css';
+import 'gantt-lit-component';
+```
+
+Select a theme with the `theme` attribute or property:
 
 ```html
 <gantt-chart theme="dark"></gantt-chart>
