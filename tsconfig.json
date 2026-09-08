@@ -10,9 +10,8 @@
     "declaration": true,
     "emitDeclarationOnly": false,
     "outDir": "dist",
-    "baseUrl": ".",
     "paths": {
-      "@gantt/*": ["src/*"]
+      "@gantt/*": ["./src/*"]
     },
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true

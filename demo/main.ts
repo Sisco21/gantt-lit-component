@@ -1,8 +1,12 @@
 import { html } from 'lit';
 import '../src/gantt-chart';
 import type { GanttChart } from '../src/gantt-chart';
-import type { GanttOptions, GanttResource, GanttTask } from '../src/types';
-import sampleData from './data.json' assert { type: 'json' };
+import type { GanttData, GanttOptions, GanttResource, GanttTask } from '../src/types';
+import sampleData from './data.json' with { type: 'json' };
+
+// JSON module imports widen literal values (for example, `type`) to `string`.
+// The bundled fixture is the component's canonical GanttData sample.
+const sampleProject = sampleData as GanttData;
 
 function getGantt(): GanttChart | null {
   return document.querySelector('gantt-chart') as GanttChart | null;
@@ -308,7 +312,7 @@ async function loadSampleData(): Promise<void> {
   try {
     // Demo-only latency: makes the loading state easy to evaluate in an integration.
     await new Promise<void>(resolve => window.setTimeout(resolve, 500));
-    getGantt()?.setData(structuredClone(sampleData));
+    getGantt()?.setData(structuredClone(sampleProject));
     showStatus('Données exemple chargées', 'success');
   } finally {
     setLoading(false);
