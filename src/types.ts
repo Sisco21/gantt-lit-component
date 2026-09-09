@@ -213,6 +213,29 @@ export interface GanttTaskEditorTemplateContext {
 /** Replaces the built-in task-editor tabs while keeping the component dialog and its persistence flow. */
 export type GanttTaskEditorTemplate = (context: GanttTaskEditorTemplateContext) => unknown;
 
+/** Actions available while rendering a task's right-click menu. */
+export interface GanttTaskContextMenuTemplateContext {
+  task: GanttTask;
+  close: () => void;
+  edit: () => void;
+  addTaskAfter: () => void;
+  deleteTask: () => void;
+  updateTask: (patch: Partial<GanttTask>) => void;
+  fitToView: () => void;
+}
+
+/** Replaces the built-in task right-click menu. Return Lit content, including nested menus when needed. */
+export type GanttTaskContextMenuTemplate = (context: GanttTaskContextMenuTemplateContext) => unknown;
+
+/** Actions available while rendering the right-click menu of an empty Gantt timeline area. */
+export interface GanttTimelineContextMenuTemplateContext {
+  close: () => void;
+  fitToView: () => void;
+}
+
+/** Replaces the built-in right-click menu displayed on an empty Gantt timeline area. */
+export type GanttTimelineContextMenuTemplate = (context: GanttTimelineContextMenuTemplateContext) => unknown;
+
 /** Text displayed by the component. Override only the entries your product needs. */
 export interface GanttTranslations {
   import: string;
@@ -232,6 +255,8 @@ export interface GanttTranslations {
   nextResult: string;
   zoomOut: string;
   zoomIn: string;
+  fitTask: string;
+  fitGantt: string;
   noTasks: string;
   noPlanningData: string;
   today: string;
@@ -284,6 +309,96 @@ export interface GanttPanOptions {
   trigger?: 'empty-area';
 }
 
+/** Data exposed to a custom cell in a Gantt or resource date header. */
+export interface GanttDateHeaderTemplateContext {
+  date: Date;
+  area: 'gantt' | 'resources';
+  index: number;
+  day: number;
+  /** Calendar week number calculated with the configured week-numbering rule. */
+  weekNumber: number;
+  weekday: string;
+  weekdayNarrow: string;
+  title: string;
+}
+
+/** Renders one date cell in the planning or resource header. */
+export type GanttDateHeaderTemplate = (context: GanttDateHeaderTemplateContext) => unknown;
+
+/** Data exposed to a custom month cell in the Gantt header. */
+export interface GanttMonthHeaderTemplateContext {
+  date: Date;
+  label: string;
+  index: number;
+  dayCount: number;
+}
+
+/** Renders one month cell in the Gantt header. */
+export type GanttMonthHeaderTemplate = (context: GanttMonthHeaderTemplateContext) => unknown;
+
+/** Data exposed to a custom week cell in the Gantt header. */
+export interface GanttWeekHeaderTemplateContext {
+  start: Date;
+  /** Calendar week number calculated with the configured week-numbering rule. */
+  weekNumber: number;
+  /** @deprecated Use `weekNumber`; kept for backward compatibility. */
+  number: number;
+  index: number;
+  dayCount: number;
+}
+
+/** Renders one week cell in the Gantt header. */
+export type GanttWeekHeaderTemplate = (context: GanttWeekHeaderTemplateContext) => unknown;
+
+export type GanttHeaderDayGrouping = 'day' | 'week';
+
+/** Header rendering rules activated when the current Gantt zoom falls within the declared range. */
+export interface GanttHeaderZoomLevel {
+  minZoom?: number;
+  maxZoom?: number;
+  showMonths?: boolean;
+  showWeeks?: boolean;
+  showDays?: boolean;
+  /** `week` replaces individual date cells with one date cell per calendar week. */
+  dayGrouping?: GanttHeaderDayGrouping;
+  monthTemplate?: GanttMonthHeaderTemplate;
+  weekTemplate?: GanttWeekHeaderTemplate;
+  dayTemplate?: GanttDateHeaderTemplate;
+  /** Label rendered in the grouped date row when `dayGrouping` is `week`. */
+  weekDateTemplate?: GanttWeekHeaderTemplate;
+}
+
+/** Visibility and date-cell rendering controls for the main Gantt header. */
+export interface GanttTimelineHeaderOptions {
+  showMonths?: boolean;
+  showWeeks?: boolean;
+  showDays?: boolean;
+  monthTemplate?: GanttMonthHeaderTemplate;
+  weekTemplate?: GanttWeekHeaderTemplate;
+  dayTemplate?: GanttDateHeaderTemplate;
+  /** First matching rule controls the header at the current zoom level. */
+  zoomLevels?: GanttHeaderZoomLevel[];
+}
+
+/** Resource-header rendering rules activated when the current Gantt zoom falls within the declared range. */
+export interface GanttResourceHeaderZoomLevel {
+  minZoom?: number;
+  maxZoom?: number;
+  visible?: boolean;
+  dayGrouping?: GanttHeaderDayGrouping;
+  dayTemplate?: GanttDateHeaderTemplate;
+  weekDateTemplate?: GanttWeekHeaderTemplate;
+}
+
+/** Visibility and date-cell rendering controls for the resource header. */
+export interface GanttResourceHeaderOptions {
+  /** Hides both the resource-column labels and the date row when false. */
+  visible?: boolean;
+  dayTemplate?: GanttDateHeaderTemplate;
+  /** First matching rule controls the resource date row at the current zoom level. */
+  zoomLevels?: GanttResourceHeaderZoomLevel[];
+}
+
 export interface GanttOptions {
   headerWidth?: number;
   /** Optional internal scroll height. Omit to let the component grow naturally. */
@@ -313,6 +428,10 @@ export interface GanttOptions {
   taskEditorMode?: 'built-in' | 'external';
   /** Replaces the body of the built-in editor with a host-provided Lit template. */
   taskEditorTemplate?: GanttTaskEditorTemplate;
+  /** Replaces the built-in task right-click menu with host-provided content. */
+  taskContextMenuTemplate?: GanttTaskContextMenuTemplate;
+  /** Replaces the right-click menu displayed on an empty Gantt timeline area. */
+  ganttContextMenuTemplate?: GanttTimelineContextMenuTemplate;
   /** Opens a host-owned modal or drawer when the user selects Add resource. */
   resourcePicker?: GanttResourcePicker;
   /** IETF locale used for dates, numbers and built-in labels. Defaults to navigator.language. */
@@ -321,6 +440,10 @@ export interface GanttOptions {
   firstDayOfWeek?: number;
   /** Display a calendar week-number row above the timeline. Defaults to false. */
   showWeekNumbers?: boolean;
+  /** Controls visible levels and date-cell rendering in the main Gantt header. */
+  ganttHeader?: GanttTimelineHeaderOptions;
+  /** Controls visibility and date-cell rendering in the resource header. */
+  resourceHeader?: GanttResourceHeaderOptions;
   /** `first-full-week` matches Microsoft Project-like calendars; use `iso` for ISO-8601 week numbers. */
   weekNumbering?: WeekNumbering;
   /** Days to shade as non-working. Uses UTC day numbers: 0 = Sunday, 6 = Saturday. Defaults to [0, 6]. */

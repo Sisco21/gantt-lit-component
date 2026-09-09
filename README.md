@@ -311,6 +311,43 @@ gantt.setOptions({
 
 The callback can use `updateTask`, `moveTask`, `addResource`, `removeResource`, `addDependency`, `removeDependency` and `close`. Use `taskEditorMode: 'external'` instead when the host application must own the full dialog or drawer.
 
+### Custom task right-click menu
+
+Set `taskContextMenuTemplate` to replace the default task menu. The template receives the complete `task`, including `type`, `fields` and `metadata`, so a host can choose a different menu for any business parameter without duplicating planning logic. The component blocks the browser's native right-click menu and keeps the main menu and its submenus inside the viewport.
+
+```ts
+import { html } from 'lit';
+
+gantt.options = {
+  taskContextMenuTemplate: ({ task, close, updateTask, fitToView }) => task.metadata?.readOnly
+    ? html`<button @click=${() => { fitToView(); close(); }}>View ${task.name}</button>`
+    : html`
+    <button @click=${() => { updateTask({ progress: 100 }); close(); }}>Mark complete</button>
+    <div class="gantt-context-submenu">
+      <button class="gantt-context-submenu-trigger">Actions <span>›</span></button>
+      <div class="gantt-context-submenu-panel">
+        <button @click=${() => { fitToView(); close(); }}>Fit ${task.name}</button>
+      </div>
+    </div>
+  `,
+};
+```
+
+### Custom empty-Gantt right-click menu
+
+Set `ganttContextMenuTemplate` to replace the menu shown when the user right-clicks an empty part of the timeline. It receives `fitToView` and `close`; the component still prevents the browser menu and positions the result inside the viewport.
+
+```ts
+import { html } from 'lit';
+
+gantt.options = {
+  ganttContextMenuTemplate: ({ fitToView, close }) => html`
+    <button @click=${() => { fitToView(); close(); }}>Fit whole schedule</button>
+    <button @click=${close}>Close</button>
+  `,
+};
+```
+
 Useful public editing methods for an external editor are:
 
 | Method | Purpose |
@@ -321,6 +358,8 @@ Useful public editing methods for an external editor are:
 | `moveTask(taskId, parentId)` | Move a task to another parent. |
 | `addDependency(from, to, type?)` | Create a task relationship. |
 | `removeDependency(from, to)` | Remove a task relationship. |
+| `fitTaskToView(taskId?)` | Zoom and centre one task in the Gantt timeline. |
+| `fitGanttToView()` | Zoom the complete project timeline to the visible width. |
 | `setData(data)` | Apply a complete host-managed data update. |
 
 Every mutation above emits `tasks-changed`, so persistence and application state remain consistent whichever editor is used.
@@ -453,6 +492,56 @@ gantt.options = {
     noPlanningData: 'Nothing has been planned yet.',
   },
 };
+```
+
+### Configurable date headers
+
+`ganttHeader` controls the month, week and day levels in the planning header. `resourceHeader` controls the complete resource-header row. Both can render each date cell with a template; the example below displays French-style compact labels such as `V 16`.
+
+```ts
+gantt.setOptions({
+  dayWidth: 30, // give compact labels such as "V 16" enough room
+  ganttHeader: {
+    showMonths: true,
+    showWeeks: true,
+    showDays: true,
+    monthTemplate: ({ label }) => label,
+    weekTemplate: ({ number }) => `S ${number}`,
+    dayTemplate: ({ weekdayNarrow, day }) => `${weekdayNarrow.toLocaleUpperCase()} ${day}`,
+    zoomLevels: [
+      // The first matching level applies: aggregate date labels by week at low zoom.
+      {
+        maxZoom: 0.74,
+        dayGrouping: 'week',
+        weekDateTemplate: ({ start }) => String(start.getUTCDate()).padStart(2, '0'),
+      },
+      { minZoom: 0.75, dayGrouping: 'day' },
+    ],
+  },
+  resourceHeader: {
+    visible: true,
+    dayTemplate: ({ weekdayNarrow, day }) => `${weekdayNarrow.toLocaleUpperCase()} ${day}`,
+    zoomLevels: [
+      { maxZoom: 0.74, dayGrouping: 'week', weekDateTemplate: ({ start }) => String(start.getUTCDate()).padStart(2, '0') },
+      { minZoom: 0.75, dayGrouping: 'day' },
+    ],
+  },
+});
+```
+
+Set `showMonths`, `showWeeks` or `showDays` to `false` to remove a Gantt header level. Set `resourceHeader.visible` to `false` to remove both the resource-column labels and its date row. `showWeeks` overrides the legacy `showWeekNumbers` option when provided.
+
+`zoomLevels` lets the planning header adapt to the current zoom. Each rule accepts `minZoom`, `maxZoom`, the same visibility flags and templates, plus `dayGrouping: 'week'` to replace daily cells with one date label per week. The first matching rule wins; omit `zoomLevels` to keep a stable header.
+
+`resourceHeader.zoomLevels` follows the same matching rule and supports `visible`, `dayGrouping`, `dayTemplate` and `weekDateTemplate`, so its date row changes at exactly the same thresholds as the planning header.
+
+Both `weekTemplate` and `weekDateTemplate` receive `weekNumber`; `number` remains available as a backward-compatible alias.
+
+Both Gantt and resource `dayTemplate` callbacks receive `weekNumber`, calculated with the configured `weekNumbering` rule.
+
+```ts
+dayTemplate: ({ weekdayNarrow, day, weekNumber }) =>
+  `S${weekNumber} ${weekdayNarrow} ${day}`,
 ```
 
 The first-day setting aligns the timeline to complete weeks and draws a subtle divider at the first day of each displayed week. With `showWeekNumbers`, the component displays a compact calendar-week row below the month header. `first-full-week` matches Microsoft Project-like calendars: the first complete week of the year is W 1 and a week crossing December/January stays attached to the previous year. Set `weekNumbering: 'iso'` for ISO-8601 numbering. Date headers and numeric values are formatted using `locale`.

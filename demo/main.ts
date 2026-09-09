@@ -121,9 +121,28 @@ function summaryCostWithCoefficient(task: GanttTask): number {
  */
 const demoOptions: GanttOptions = {
   locale: navigator.language,
+  dayWidth: 30, // Keeps compact custom labels such as "V 16" on one line.
   firstDayOfWeek: 1, // Monday
   showWeekNumbers: true,
   weekNumbering: 'iso', //'first-full-week', // Microsoft Project-like convention
+  // The same configurable date label is used in the planning and resource headers.
+  ganttHeader: {
+    monthTemplate: ({ label }) => label,
+    weekTemplate: ({ number }) => `W ${number}`,
+    dayTemplate: ({ weekdayNarrow, day }) => `${weekdayNarrow.toLocaleUpperCase()} ${day}`,
+    // At lower zoom, replace daily labels with one date label per calendar week.
+    zoomLevels: [
+      { maxZoom: .74, dayGrouping: 'week', weekDateTemplate: ({ start }) => String(start.getUTCDate()).padStart(2, '0') },
+      { minZoom: .75, dayGrouping: 'day' },
+    ],
+  },
+  resourceHeader: {
+    dayTemplate: ({ weekdayNarrow, day }) => `${weekdayNarrow.toLocaleUpperCase()} ${day}`,
+    zoomLevels: [
+      { maxZoom: .74, dayGrouping: 'week', weekDateTemplate: ({ start, weekNumber }) => `W ${weekNumber}` },
+      { minZoom: .75, dayGrouping: 'day' },
+    ],
+  },
   nonWorkingDays: [0, 6], // Sunday and Saturday
   // Drag from an empty timeline cell to browse the plan without using its scrollbars.
   pan: { enabled: true, axis: 'both', trigger: 'empty-area' },
@@ -131,6 +150,39 @@ const demoOptions: GanttOptions = {
   showToday: true,
   showDependencies: true,
   taskEditorMode: 'built-in',
+  ganttContextMenuTemplate: ({ fitToView, close }) => html`
+    <button @click=${() => { fitToView(); close(); }}>
+      Ajuster le planning ${(new Date()).toLocaleString('fr-FR')}
+    </button>
+    <button @click=${close}>Fermer</button>
+  `,
+  // The menu can branch on any task field: here, parents receive a phase menu,
+  // while normal tasks receive progress actions. `task.fields` and `task.metadata`
+  // are also available for business-specific menu rules.
+  taskContextMenuTemplate: context => {
+    const { task, close, edit, addTaskAfter, deleteTask, updateTask, fitToView } = context;
+    if (task.type === 'parent') return html`
+      <button role="menuitem" @click=${edit}>✎ Edit phase</button>
+      <button role="menuitem" @click=${() => { fitToView(); close(); }}>Fit phase</button>
+      <button role="menuitem" @click=${addTaskAfter}>＋ Add phase task</button>
+      <button class="danger" role="menuitem" @click=${deleteTask}>Delete phase</button>
+    `;
+    return html`
+      <button role="menuitem" @click=${edit}>✎ Edit task</button>
+      <div class="gantt-context-submenu">
+        <button class="gantt-context-submenu-trigger" role="menuitem" aria-haspopup="menu">Schedule <span aria-hidden="true">›</span></button>
+        <div class="gantt-context-submenu-panel" role="menu">
+          <button role="menuitem" @click=${() => { updateTask({ progress: 0 }); close(); }}>Set progress to 0%</button>
+          <button role="menuitem" @click=${() => { updateTask({ progress: 50 }); close(); }}>Set progress to 50%</button>
+          <button role="menuitem" @click=${() => { updateTask({ progress: 100 }); close(); }}>Mark as complete</button>
+          <button role="menuitem" @click=${() => { fitToView(); close(); }}>Fit ${task.name}</button>
+        </div>
+      </div>
+      <button role="menuitem" @click=${addTaskAfter}>＋ Add task after</button>
+      <button role="menuitem" @click=${() => { console.info('Context task:', task); close(); }}>Log task</button>
+      <button class="danger" role="menuitem" @click=${deleteTask}>Delete task</button>
+    `;
+  },
   taskBarTemplate: ({ task, kind, durationDays }) => kind === 'summary'
     ? html`${new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 }).format(summaryCostWithCoefficient(task))} €`
     : html`${durationDays} j ☝ · ${task.progress}%`,
