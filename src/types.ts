@@ -182,7 +182,7 @@ export interface GanttResourceColumn {
 /** Renders the label displayed on a parent-task summary bar. Strings and Lit templates are supported. */
 export type GanttSummaryTemplate = (task: GanttTask) => unknown;
 
-export type GanttTaskBarKind = 'task' | 'summary';
+export type GanttTaskBarKind = 'task' | 'summary' | 'milestone';
 
 /** Context passed when the host customizes the visible content of a Gantt task bar. */
 export interface GanttTaskBarTemplateContext {
@@ -194,8 +194,20 @@ export interface GanttTaskBarTemplateContext {
   kind: GanttTaskBarKind;
 }
 
-/** Renders the content of a task or summary bar. The bar interactions remain managed by the component. */
+/** Renders the content of a task, phase summary or milestone label. The interactions remain managed by the component. */
 export type GanttTaskBarTemplate = (context: GanttTaskBarTemplateContext) => unknown;
+
+/** Context passed when the host customizes a task-bar tooltip. */
+export interface GanttTaskTooltipTemplateContext {
+  task: GanttTask;
+  color: string;
+  durationDays: number;
+  kind: GanttTaskBarKind;
+  resources: GanttResource[];
+}
+
+/** Replaces the content of the tooltip displayed while hovering a Gantt task bar. */
+export type GanttTaskTooltipTemplate = (context: GanttTaskTooltipTemplateContext) => unknown;
 
 /** Actions exposed to a custom task-editor template rendered inside the component dialog. */
 export interface GanttTaskEditorTemplateContext {
@@ -231,6 +243,10 @@ export type GanttTaskContextMenuTemplate = (context: GanttTaskContextMenuTemplat
 export interface GanttTimelineContextMenuTemplateContext {
   close: () => void;
   fitToView: () => void;
+  /** Date corresponding to the empty timeline cell that was right-clicked. */
+  date: string;
+  addTask: () => void;
+  addPhase: () => void;
 }
 
 /** Replaces the built-in right-click menu displayed on an empty Gantt timeline area. */
@@ -246,6 +262,7 @@ export interface GanttTranslations {
   saveLocal: string;
   loadLocal: string;
   addTask: string;
+  addPhase: string;
   delete: string;
   expandAll: string;
   collapseAll: string;
@@ -412,6 +429,16 @@ export interface GanttOptions {
   summaryTemplate?: GanttSummaryTemplate;
   /** Extra content appended after the task name inside task and parent summary bars. */
   taskBarTemplate?: GanttTaskBarTemplate;
+  /** Extra content appended after the name inside a regular task bar. Takes precedence over `taskBarTemplate`. */
+  taskTemplate?: GanttTaskBarTemplate;
+  /** Extra content appended after the name inside a phase summary bar. Takes precedence over `taskBarTemplate` and `summaryTemplate`. */
+  phaseTemplate?: GanttTaskBarTemplate;
+  /** Content displayed beside a milestone diamond. */
+  milestoneTemplate?: GanttTaskBarTemplate;
+  /** Set false to disable task-bar tooltips. Defaults to true. */
+  showTaskTooltips?: boolean;
+  /** Replaces the content of the task-bar tooltip while keeping its positioning and visual shell. */
+  taskTooltipTemplate?: GanttTaskTooltipTemplate;
   dayWidth?: number;
   minZoom?: number;
   maxZoom?: number;
@@ -452,7 +479,8 @@ export interface GanttOptions {
   pan?: GanttPanOptions;
   /** Override individual built-in labels after locale selection. */
   translations?: Partial<GanttTranslations>;
-  onTaskSelect?: (taskId: string) => void;
+  /** Called with the selected task id and its complete task object. */
+  onTaskSelect?: (taskId: string, task: GanttTask) => void;
   onTaskEdit?: (task: GanttTask) => void;
   onTasksChange?: (data: GanttData) => void;
 }

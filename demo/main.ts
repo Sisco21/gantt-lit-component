@@ -1,4 +1,4 @@
-import { html } from 'lit';
+import { html, nothing } from 'lit';
 import '../src/gantt-chart';
 import type { GanttChart } from '../src/gantt-chart';
 import type { GanttData, GanttOptions, GanttResource, GanttResourceProvider, GanttResourceReference, GanttTask } from '../src/types';
@@ -150,7 +150,9 @@ const demoOptions: GanttOptions = {
   showToday: true,
   showDependencies: true,
   taskEditorMode: 'built-in',
-  ganttContextMenuTemplate: ({ fitToView, close }) => html`
+  ganttContextMenuTemplate: ({ fitToView, close, addTask, addPhase, date }) => html`
+    <button @click=${addTask}>＋ Add task on ${date}</button>
+    <button @click=${addPhase}>＋ Add phase on ${date}</button>
     <button @click=${() => { fitToView(); close(); }}>
       Ajuster le planning ${(new Date()).toLocaleString('fr-FR')}
     </button>
@@ -183,9 +185,19 @@ const demoOptions: GanttOptions = {
       <button class="danger" role="menuitem" @click=${deleteTask}>Delete task</button>
     `;
   },
-  taskBarTemplate: ({ task, kind, durationDays }) => kind === 'summary'
-    ? html`${new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 }).format(summaryCostWithCoefficient(task))} €`
-    : html`${durationDays} j ☝ · ${task.progress}%`,
+  taskTemplate: ({ task, durationDays }) => html`${durationDays} j · ${task.progress}%`,
+  phaseTemplate: ({ task }) => html`${new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 }).format(summaryCostWithCoefficient(task))} €`,
+  milestoneTemplate: ({ task, durationDays }) => html`${task.name} · ${durationDays} j`,
+  // The tooltip receives the original task object, its resolved colour and assigned resources.
+  taskTooltipTemplate: ({ task, color, durationDays, resources, kind }) => html`
+    <div class="task-tooltip-title"><span class="task-tooltip-accent" style="--tooltip-color:${color}"></span><span>${task.name}</span></div>
+    <div class="task-tooltip-details">
+      <span>Duration</span><strong>${durationDays} days</strong>
+      <span>Progress</span><strong>${task.progress}%</strong>
+      <span>Cost</span><strong>${new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 }).format(kind === 'summary' ? summaryCostWithCoefficient(task) : taskCostWithCoefficient(task))} €</strong>
+    </div>
+    ${resources.length ? html`<div class="task-tooltip-resources"><strong>Resources</strong><span>${resources.map(resource => resource.name).join(', ')}</span></div>` : nothing}
+  `,
   taskColumns: [
     { key: 'code', label: 'Code1', width: 64 },
     { key: 'name', label: 'Task name', width: 230, required: true },
@@ -228,7 +240,7 @@ const demoOptions: GanttOptions = {
       format: value => `${new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 }).format(Number(value) || 0)} €`,
     },
   ],
-  onTaskSelect: taskId => console.info('Selected task:', taskId),
+  onTaskSelect: (taskId, task) => console.info('Selected task:', taskId, task),
   onTasksChange: data => console.info('Planning updated:', data),
 };
 

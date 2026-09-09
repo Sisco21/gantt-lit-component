@@ -101,7 +101,7 @@ For a simple in-memory host store, an option is also available:
 ```ts
 gantt.options = {
   onTasksChange: (data) => projectStore.set(data),
-  onTaskSelect: (taskId) => detailsPanel.select(taskId),
+  onTaskSelect: (taskId, task) => detailsPanel.select(taskId, task),
 };
 ```
 
@@ -335,13 +335,15 @@ gantt.options = {
 
 ### Custom empty-Gantt right-click menu
 
-Set `ganttContextMenuTemplate` to replace the menu shown when the user right-clicks an empty part of the timeline. It receives `fitToView` and `close`; the component still prevents the browser menu and positions the result inside the viewport.
+Set `ganttContextMenuTemplate` to replace the menu shown when the user right-clicks an empty part of the timeline. It receives `date`, `addTask`, `addPhase`, `fitToView` and `close`; the component still prevents the browser menu and positions the result inside the viewport.
 
 ```ts
 import { html } from 'lit';
 
 gantt.options = {
-  ganttContextMenuTemplate: ({ fitToView, close }) => html`
+  ganttContextMenuTemplate: ({ date, addTask, addPhase, fitToView, close }) => html`
+    <button @click=${addTask}>Add task on ${date}</button>
+    <button @click=${addPhase}>Add phase on ${date}</button>
     <button @click=${() => { fitToView(); close(); }}>Fit whole schedule</button>
     <button @click=${close}>Close</button>
   `,
@@ -356,6 +358,7 @@ Useful public editing methods for an external editor are:
 | `addChildTask(parentId, task?)` | Create a child task. |
 | `addResource(taskId, resource?)` | Add an assignment to a task. |
 | `moveTask(taskId, parentId)` | Move a task to another parent. |
+| `reorderTask(taskId, targetTaskId, position)` | Place a task and its descendants before or after another task at the same level. |
 | `addDependency(from, to, type?)` | Create a task relationship. |
 | `removeDependency(from, to)` | Remove a task relationship. |
 | `fitTaskToView(taskId?)` | Zoom and centre one task in the Gantt timeline. |
@@ -363,6 +366,16 @@ Useful public editing methods for an external editor are:
 | `setData(data)` | Apply a complete host-managed data update. |
 
 Every mutation above emits `tasks-changed`, so persistence and application state remain consistent whichever editor is used.
+
+### Reorder tasks from the tree
+
+Drag a row onto the upper quarter of a phase to place it **before**, or onto the lower quarter to place it **after**. Dropping in the middle of a phase makes the dragged task a child of that phase. On a regular task, the component always performs a sibling reorder: a task dragged downward goes **after** its target, while a task dragged upward goes **before** it. It never creates a parent-child relationship between two tasks. A moved task keeps its type (`task`, `parent`, or `milestone`) and carries all of its descendants with it.
+
+The same sibling reordering is available to an external editor:
+
+```ts
+gantt.reorderTask('definition', 'market-research', 'after');
+```
 
 ## Configure the view
 
@@ -414,23 +427,57 @@ The bar colour is exposed as `--gantt-summary`, with a readable default in both 
 
 Every task has a persisted `color` field. Missing colours are initialized automatically when data is imported or a task is created, so the selected value is included in JSON exports and change events. The built-in task editor also exposes a colour picker.
 
-Use `taskBarTemplate` to append information after the task name inside regular task bars and parent summary bars. The component keeps the task title visible and continues to manage drag, resize, selection and dependency interactions.
+Use `taskTemplate`, `phaseTemplate`, and `milestoneTemplate` to customize each Gantt object independently. Task and phase templates append information after the built-in name, so labels remain visible. A milestone template is displayed beside its diamond. The component continues to manage drag, resize, selection and dependency interactions.
+
+A task whose `type` is `parent` is always presented as a bold phase in the left grid and as a summary bar, even when it has no children. No template is required for that distinction.
 
 ```ts
 import { html } from 'lit';
 
 gantt.setOptions({
-  taskBarTemplate: ({ task, color, width, durationDays, kind }) => kind === 'summary'
-    ? html`${task.metadata?.budget ?? 0} €`
-    : width > 100
-      ? html`${durationDays} days · ${task.progress}%`
-      : '',
+  taskTemplate: ({ width, durationDays, task }) => width > 100
+    ? html`${durationDays} days · ${task.progress}%`
+    : '',
+  phaseTemplate: ({ task }) => html`${task.metadata?.budget ?? 0} €`,
+  milestoneTemplate: ({ task, durationDays }) => html`${task.name} · ${durationDays} days`,
 });
 
 gantt.updateTask('task-42', { color: '#7c3aed' });
 ```
 
-The template receives the task, its persisted colour, the visible bar width, `durationDays`, and a `kind` (`task` or `summary`). `durationDays` matches the built-in Duration column and is recalculated whenever a task is moved or resized.
+Every template receives the task, its persisted colour, the visible bar width, `durationDays`, and a `kind` (`task`, `summary`, or `milestone`). `durationDays` matches the built-in Duration column and is recalculated whenever a task is moved or resized.
+
+`taskBarTemplate` remains available for existing integrations; it is the fallback for regular tasks and phases. `summaryTemplate` remains the final fallback for phases.
+
+### Custom task tooltips
+
+Hovering a task bar shows a compact tooltip with its name, dates, duration, progress, colour and assigned resources. The tooltip follows the pointer, remains within the viewport and automatically adopts the light or dark component theme.
+
+Set `showTaskTooltips: false` to disable it. Use `taskTooltipTemplate` to replace its content while the component continues to control its visual shell and placement. The template receives the complete `task` object, the resolved task `color`, `durationDays`, the bar `kind` (`task` or `summary`), and the assigned `resources`.
+
+```ts
+import { html } from 'lit';
+
+gantt.setOptions({
+  taskTooltipTemplate: ({ task, color, durationDays, resources }) => html`
+    <div class="task-tooltip-title">
+      <span class="task-tooltip-accent" style="--tooltip-color:${color}"></span>
+      <span>${task.name}</span>
+    </div>
+    <div class="task-tooltip-details">
+      <span>Duration</span><strong>${durationDays} days</strong>
+      <span>Progress</span><strong>${task.progress}%</strong>
+    </div>
+    ${resources.length ? html`
+      <div class="task-tooltip-resources">
+        <strong>Resources</strong><span>${resources.map(resource => resource.name).join(', ')}</span>
+      </div>
+    ` : ''}
+  `,
+});
+```
+
+The `task-tooltip-title`, `task-tooltip-accent`, `task-tooltip-details`, and `task-tooltip-resources` classes are available for a consistent layout in custom content. Override `--gantt-tooltip-background`, `--gantt-tooltip-border`, `--gantt-tooltip-color`, or `--gantt-tooltip-shadow` on `<gantt-chart>` to restyle the shell without changing the template.
 
 ### Add business and calculated columns
 

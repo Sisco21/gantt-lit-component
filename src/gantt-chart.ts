@@ -18,6 +18,7 @@ import {
   GanttResourceReference,
   GanttSaveHook,
   GanttTask,
+  GanttTaskBarKind,
   GanttTheme,
   GanttTranslations,
   ProjectFileAdapter,
@@ -29,7 +30,6 @@ import {
   diffDays,
   formatDate,
   getDateRange,
-  getMonthLabel,
   getVisibleTasks,
   parseDateOnly,
 } from './utils';
@@ -107,6 +107,10 @@ export class GanttChart extends LitElement {
       --gantt-milestone: #dc5b65;
       --gantt-dependency: #3b82c4;
       --gantt-surface: #fff;
+      --gantt-tooltip-background: var(--gantt-surface);
+      --gantt-tooltip-border: var(--gantt-control-border);
+      --gantt-tooltip-color: inherit;
+      --gantt-tooltip-shadow: 0 12px 28px rgb(15 23 42 / 24%);
       --gantt-control-background: #fff;
       --gantt-control-hover: #f4f7fb;
       --gantt-control-border: #cbd5e1;
@@ -344,7 +348,10 @@ export class GanttChart extends LitElement {
     .task-row { z-index: 5; width: 100%; overflow: hidden; border-right: 1px solid var(--gantt-border); cursor: pointer; }
     .task-row.alt, .timeline-row.alt { background-color: var(--gantt-row-alt); }
     .task-row:hover, .task-row.selected { background-color: var(--gantt-selection); color: var(--gantt-selection-foreground); }
-    .task-row.drop-target { box-shadow: inset 0 0 0 2px #60a5fa; }
+    .task-row.drop-inside { box-shadow: inset 0 0 0 2px #60a5fa; }
+    .task-row.drop-before::before, .task-row.drop-after::after { position: absolute; right: 0; left: 0; z-index: 6; height: 2px; content: ''; background: #60a5fa; pointer-events: none; }
+    .task-row.drop-before::before { top: -1px; }
+    .task-row.drop-after::after { bottom: -1px; }
     .task-row.search-match, .timeline-row.search-match { background-color: var(--gantt-search-match); color: var(--gantt-search-match-foreground); }
     .task-row.search-current { box-shadow: inset 3px 0 0 #d99714; }
     .task-cells { height: 100%; align-items: center; }
@@ -366,6 +373,7 @@ export class GanttChart extends LitElement {
     .task-bar:active { cursor: grabbing; }
     .task-bar.selected { outline: 2px solid #1d65c1; outline-offset: 1px; }
     .task-bar.milestone { width: 17px !important; height: 17px; top: 12px; transform: rotate(45deg); border-radius: 2px; padding: 0; }
+    .milestone-template { position: absolute; top: 10px; z-index: 4; max-width: min(240px, calc(100% - 24px)); overflow: hidden; color: var(--milestone-color); font-size: 11px; font-weight: 700; line-height: 18px; pointer-events: none; text-overflow: ellipsis; white-space: nowrap; }
     .task-work { position: absolute; top: 9px; z-index: 4; height: 24px; color: #fff; cursor: grab; font-size: 11px; line-height: 24px; }
     .task-work:active { cursor: grabbing; }
     .task-work.selected { outline: 2px solid #1d65c1; outline-offset: 1px; }
@@ -388,6 +396,15 @@ export class GanttChart extends LitElement {
     .resize-handle.end::after { right: 3px; }
     .resize-handle.start { left: 0; }
     .resize-handle.end { right: 0; }
+    .task-tooltip { position: fixed; z-index: 95; box-sizing: border-box; max-width: min(330px, calc(100vw - 16px)); padding: 10px 12px; border: 1px solid var(--gantt-tooltip-border); border-radius: 8px; background: var(--gantt-tooltip-background); color: var(--gantt-tooltip-color); box-shadow: var(--gantt-tooltip-shadow); font-size: 12px; line-height: 1.35; pointer-events: none; }
+    .task-tooltip-title { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 700; }
+    .task-tooltip-title > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .task-tooltip-accent { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--tooltip-color); box-shadow: 0 0 0 2px color-mix(in srgb, var(--tooltip-color) 22%, transparent); }
+    .task-tooltip-details { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 14px; margin-top: 9px; color: var(--gantt-muted); font-size: 11px; }
+    .task-tooltip-details strong { color: inherit; font-weight: 700; text-align: right; }
+    .task-tooltip-resources { display: flex; gap: 6px; margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--gantt-border); color: var(--gantt-muted); font-size: 11px; }
+    .task-tooltip-resources strong { flex: 0 0 auto; color: inherit; }
+    .task-tooltip-resources span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     .non-working-day-band { position: absolute; top: 0; bottom: 0; z-index: 2; border-left: 1px solid rgb(148 163 184 / 20%); background: var(--gantt-non-working-day); pointer-events: none; }
     .non-working-day-band.non-working-start { border-left: 2px solid var(--gantt-border); }
@@ -450,9 +467,9 @@ export class GanttChart extends LitElement {
     .resources-scroll { grid-column: 1 / -1; grid-row: 2; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; position: relative; scrollbar-gutter: stable; }
     .resources-body { display: grid; grid-template-columns: var(--header-width) minmax(160px, 1fr); grid-template-rows: var(--resource-header-height, 32px) minmax(0, 1fr); width: 100%; min-width: 0; min-height: 100%; }
     .resource-left-header { grid-column: 1; grid-row: 1; position: sticky; top: 0; z-index: 4; overflow: hidden; border-right: 1px solid var(--gantt-border); background: var(--gantt-header); }
-    .resources-left { grid-column: 1; grid-row: 2; min-width: 0; min-height: 0; overflow-x: auto; overflow-y: clip; border-right: 1px solid var(--gantt-border); scrollbar-width: none; background: repeating-linear-gradient(to bottom, transparent 0, transparent 31px, var(--gantt-grid-line) 31px, var(--gantt-grid-line) 32px); }
+    .resources-left { grid-column: 1; grid-row: 2; min-width: 0; min-height: 0; overflow-x: auto; overflow-y: clip; border-right: 1px solid var(--gantt-border); scrollbar-width: none; }
     .resources-grid { display: grid; grid-template-columns: var(--resource-columns-template); min-width: var(--resource-columns-width); }
-    .resource-timeline { grid-column: 2; grid-row: 2; width: 100%; min-width: 0; min-height: 0; overflow-x: auto; overflow-y: clip; scrollbar-width: none; background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(var(--day-width) - 1px), var(--gantt-grid-line) calc(var(--day-width) - 1px), var(--gantt-grid-line) var(--day-width)), repeating-linear-gradient(to bottom, transparent 0, transparent 31px, var(--gantt-grid-line) 31px, var(--gantt-grid-line) 32px); }
+    .resource-timeline { grid-column: 2; grid-row: 2; width: 100%; min-width: 0; min-height: 0; overflow-x: auto; overflow-y: clip; scrollbar-width: none; }
     .resources-left::-webkit-scrollbar, .resource-timeline::-webkit-scrollbar { height: 0; width: 0; }
     /* Référence de positionnement des jours grisés : ils restent dans la zone des dates. */
     .resource-timeline-content { position: relative; isolation: isolate; width: var(--timeline-width); min-width: 100%; min-height: 100%; }
@@ -535,8 +552,9 @@ export class GanttChart extends LitElement {
   private statusMessage = '';
   private statusKind: 'info' | 'success' | 'error' = 'info';
   private resourceContextMenu?: { taskId: string; x: number; y: number };
-  private ganttContextMenu?: { x: number; y: number };
+  private ganttContextMenu?: { x: number; y: number; date: string };
   private taskContextMenu?: { taskId: string; x: number; y: number };
+  private taskTooltip?: { taskId: string; color: string; kind: GanttTaskBarKind; x: number; y: number };
   private taskEditorId?: string;
   private taskEditorTab: 'general' | 'resources' | 'links' = 'general';
   private taskEditorLinkType: GanttDependency['type'] = 'finish-to-start';
@@ -555,16 +573,27 @@ export class GanttChart extends LitElement {
   private resourcePanelHeight = 260;
   private splitUserResized = false;
   private draggedTaskId: string | null = null;
+  private taskDropTarget?: { taskId: string; position: 'before' | 'inside' | 'after' };
   private renderTaskIndex = new Map<string, GanttTask>();
   private renderTaskDepths = new Map<string, number>();
   private renderTaskCodes = new Map<string, string>();
   private renderTaskCosts = new Map<string, number>();
   private numberFormatter?: Intl.NumberFormat;
   private numberFormatterLocale = '';
+  private dateFormatterLocale = '';
+  private dateFormatters?: {
+    month: Intl.DateTimeFormat;
+    weekday: Intl.DateTimeFormat;
+    weekdayNarrow: Intl.DateTimeFormat;
+    title: Intl.DateTimeFormat;
+  };
+  private readonly dateHeaderLabels = new Map<string, { weekday: string; weekdayNarrow: string; title: string }>();
   private resourceTimelineViewport = { scrollLeft: 0, width: 0 };
   private resourceTimelineDayWidth = 24;
   private ganttViewport = { scrollTop: 0, height: 0 };
   private ganttViewportFrame?: number;
+  private timelineSynchronizationFrame?: number;
+  private pendingTimelineSynchronization?: { scrollLeft: number; source?: HTMLElement };
   private ganttViewportResizeObserver?: ResizeObserver;
   private barDrag?: {
     taskId: string;
@@ -598,6 +627,7 @@ export class GanttChart extends LitElement {
     this.finishBarDrag();
     this.finishGanttPan();
     if (this.ganttViewportFrame !== undefined) window.cancelAnimationFrame(this.ganttViewportFrame);
+    if (this.timelineSynchronizationFrame !== undefined) window.cancelAnimationFrame(this.timelineSynchronizationFrame);
     this.ganttViewportResizeObserver?.disconnect();
     super.disconnectedCallback();
   }
@@ -708,6 +738,7 @@ export class GanttChart extends LitElement {
         ${this.renderResourceContextMenu()}
         ${this.renderGanttContextMenu()}
         ${this.renderTaskContextMenu()}
+        ${this.renderTaskTooltip()}
         ${this.renderTaskEditor()}
         ${this.renderResourcePicker()}
       </div>
@@ -801,7 +832,7 @@ export class GanttChart extends LitElement {
     if (!task) return;
     this.selectedTaskId = taskId;
     this.dispatch('task-selected', { id: taskId, task });
-    this.options.onTaskSelect?.(taskId);
+    this.options.onTaskSelect?.(taskId, task);
     this.requestUpdate();
   }
 
@@ -992,7 +1023,7 @@ export class GanttChart extends LitElement {
   addChildTask(parentId: string, newTask: Partial<GanttTask> = {}): GanttTask {
     const today = formatDate(new Date());
     const taskId = newTask.id || this.createId();
-    const type = newTask.type || (parentId ? 'task' : 'parent');
+    const type = newTask.type || 'task';
     const task: GanttTask = {
       ...newTask,
       id: taskId,
@@ -1034,6 +1065,30 @@ export class GanttChart extends LitElement {
     this.replaceFlatTasks(next, 'task-moved', taskId);
   }
 
+  /** Reorders a task (and its descendants) before or after a sibling target. */
+  reorderTask(taskId: string, targetTaskId: string, position: 'before' | 'after'): void {
+    if (taskId === targetTaskId || this.isDescendant(targetTaskId, taskId)) return;
+    const flatTasks = this.getFlatTasks();
+    const movingIds = this.getTaskSubtreeIds(taskId, flatTasks);
+    if (!movingIds.size) return;
+
+    const movingTasks = flatTasks.filter(task => movingIds.has(task.id));
+    const remainingTasks = flatTasks.filter(task => !movingIds.has(task.id));
+    const targetIndex = remainingTasks.findIndex(task => task.id === targetTaskId);
+    const target = remainingTasks[targetIndex];
+    if (!target) return;
+
+    const movedRoot = movingTasks[0];
+    const reorderedTasks = [{ ...movedRoot, parentId: target.parentId }, ...movingTasks.slice(1)];
+    let insertIndex = targetIndex;
+    if (position === 'after') {
+      const targetSubtreeIds = this.getTaskSubtreeIds(targetTaskId, remainingTasks);
+      while (insertIndex < remainingTasks.length && targetSubtreeIds.has(remainingTasks[insertIndex].id)) insertIndex += 1;
+    }
+    remainingTasks.splice(insertIndex, 0, ...reorderedTasks);
+    this.replaceFlatTasks(remainingTasks, 'task-moved', taskId);
+  }
+
   addDependency(from: string, to: string, type: GanttDependency['type'] = 'finish-to-start'): void {
     if (!from || !to || from === to || !this.findTask(from) || !this.findTask(to)) return;
     if (this.dependencies.some(dependency => dependency.from === from && dependency.to === to)) return;
@@ -1054,12 +1109,14 @@ export class GanttChart extends LitElement {
     const children = task.children || [];
     const depth = this.getDepth(task);
     const selected = task.id === this.selectedTaskId;
+    const dropPosition = this.taskDropTarget?.taskId === task.id ? this.taskDropTarget.position : '';
     return html`
-      <div class="task-row ${selected ? 'selected' : ''} ${index % 2 ? 'alt' : ''} ${searchMatches.has(task.id) ? 'search-match' : ''} ${task.id === currentSearchId ? 'search-current' : ''}" style="top:${index * ROW_HEIGHT}px" data-task-id=${task.id}
+      <div class="task-row ${selected ? 'selected' : ''} ${index % 2 ? 'alt' : ''} ${searchMatches.has(task.id) ? 'search-match' : ''} ${task.id === currentSearchId ? 'search-current' : ''} ${dropPosition ? `drop-${dropPosition}` : ''}" style="top:${index * ROW_HEIGHT}px" data-task-id=${task.id}
            draggable="true"
            @click=${() => this.focusTaskFromGrid(task.id)}
            @dragstart=${(event: DragEvent) => this.handleDragStart(event, task.id)}
-           @dragover=${(event: DragEvent) => this.handleDragOver(event)}
+           @dragend=${this.clearTaskDropTarget}
+           @dragover=${(event: DragEvent) => this.handleDragOver(event, task.id)}
            @drop=${(event: DragEvent) => this.handleDrop(event, task.id)}
            @contextmenu=${(event: MouseEvent) => this.openTaskContextMenu(task.id, event)}
            @dblclick=${() => this.editTaskName(task)}>
@@ -1072,8 +1129,9 @@ export class GanttChart extends LitElement {
     const value = this.getColumnValue(task, column);
     const isName = column.key === 'name';
     const isNumber = column.type === 'number' || ['unitCost', 'quantity', 'quantityPerDay', 'duration', 'costTotal'].includes(column.key);
+    const isPhase = task.type === 'parent';
     return html`
-      <div class="task-cell ${isName ? 'name' : ''} ${isNumber ? 'number' : ''} ${hasChildren ? 'parent' : ''}" style="width:${this.getColumnWidth(column)}px" title=${value === null || value === undefined ? '' : String(value)}>
+      <div class="task-cell ${isName ? 'name' : ''} ${isNumber ? 'number' : ''} ${hasChildren || isPhase ? 'parent' : ''}" style="width:${this.getColumnWidth(column)}px" title=${value === null || value === undefined ? '' : String(value)}>
         ${isName ? html`
           <button class="toggle" style="left:${2 + depth * 16}px" ?disabled=${!hasChildren} @click=${(event: Event) => { event.stopPropagation(); this.toggleTask(task.id); }} aria-label="Déplier ou replier" aria-expanded=${hasChildren ? String(!task.collapsed) : nothing}>
             ${hasChildren ? task.collapsed ? '▶' : '▼' : '·'}
@@ -1233,6 +1291,64 @@ export class GanttChart extends LitElement {
     `;
   }
 
+  private renderTaskTooltip() {
+    const tooltip = this.taskTooltip;
+    if (!tooltip) return nothing;
+    const task = this.findTask(tooltip.taskId);
+    if (!task) return nothing;
+    const context = {
+      task,
+      color: tooltip.color,
+      durationDays: this.getTaskDurationDays(task),
+      kind: tooltip.kind,
+      resources: task.resources || [],
+    };
+    const content = this.options.taskTooltipTemplate?.(context) ?? html`
+      <div class="task-tooltip-title"><span class="task-tooltip-accent" style="--tooltip-color:${tooltip.color}"></span><span>${task.name}</span></div>
+      <div class="task-tooltip-details">
+        <span>${this.t('start')}</span><strong>${task.start}</strong>
+        <span>${this.t('finish')}</span><strong>${task.end}</strong>
+        <span>${this.t('duration')}</span><strong>${context.durationDays}</strong>
+        <span>${this.t('progress')}</span><strong>${task.progress}%</strong>
+      </div>
+      ${context.resources.length ? html`<div class="task-tooltip-resources"><strong>${this.t('resources')}</strong><span>${context.resources.map(resource => resource.name).join(', ')}</span></div>` : nothing}
+    `;
+    return html`<div class="task-tooltip" role="tooltip" style="left:${tooltip.x + 14}px; top:${tooltip.y + 14}px">${content}</div>`;
+  }
+
+  private openTaskTooltip(event: PointerEvent, task: GanttTask, color: string, kind: GanttTaskBarKind): void {
+    if (this.options.showTaskTooltips === false || event.pointerType === 'touch') return;
+    this.taskTooltip = { taskId: task.id, color, kind, x: event.clientX, y: event.clientY };
+    this.requestUpdate();
+    void this.updateComplete.then(() => this.positionTaskTooltip());
+  }
+
+  private moveTaskTooltip = (event: PointerEvent): void => {
+    if (!this.taskTooltip || event.pointerType === 'touch') return;
+    this.taskTooltip.x = event.clientX;
+    this.taskTooltip.y = event.clientY;
+    this.positionTaskTooltip();
+  };
+
+  private closeTaskTooltip = (): void => {
+    if (!this.taskTooltip) return;
+    this.taskTooltip = undefined;
+    this.requestUpdate();
+  };
+
+  private positionTaskTooltip(): void {
+    const tooltipState = this.taskTooltip;
+    const tooltip = this.renderRoot.querySelector<HTMLElement>('.task-tooltip');
+    if (!tooltipState || !tooltip) return;
+    const offset = 14;
+    const margin = 8;
+    const bounds = tooltip.getBoundingClientRect();
+    const left = Math.max(margin, Math.min(tooltipState.x + offset, window.innerWidth - bounds.width - margin));
+    const top = Math.max(margin, Math.min(tooltipState.y + offset, window.innerHeight - bounds.height - margin));
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  }
+
   private renderGanttContextMenu() {
     const menu = this.ganttContextMenu;
     if (!menu) return nothing;
@@ -1240,7 +1356,9 @@ export class GanttChart extends LitElement {
     return html`
       <div class="resource-context-backdrop" @click=${this.closeGanttContextMenu}></div>
       <div class="resource-context-menu gantt-context-menu" role="menu" style="left:${menu.x}px; top:${menu.y}px" @click=${(event: Event) => event.stopPropagation()}>
-        ${template ? template({ close: this.closeGanttContextMenu, fitToView: this.fitGanttFromContext }) : html`
+        ${template ? template({ close: this.closeGanttContextMenu, fitToView: this.fitGanttFromContext, date: menu.date, addTask: () => this.addTimelineItemFromContext('task'), addPhase: () => this.addTimelineItemFromContext('parent') }) : html`
+          <button @click=${() => this.addTimelineItemFromContext('task')}>＋ ${this.t('addTask')}</button>
+          <button @click=${() => this.addTimelineItemFromContext('parent')}>＋ ${this.t('addPhase')}</button>
           <button @click=${this.fitGanttFromContext}>${this.t('fitGantt')}</button>
         `}
       </div>
@@ -1380,13 +1498,16 @@ export class GanttChart extends LitElement {
 
   private renderTaskBar(task: GanttTask, left: number, width: number, color: string, selected: boolean, timelineStart: Date, dayWidth: number) {
     const milestone = task.type === 'milestone';
-    const summary = !milestone && (task.type === 'parent' || Boolean(task.children?.length));
+    const summary = !milestone && task.type === 'parent';
     if (summary) {
-      const template = this.options.taskBarTemplate?.({ task, color, width, durationDays: this.getTaskDurationDays(task), kind: 'summary' }) ?? this.options.summaryTemplate?.(task);
+      const template = this.getTaskBarTemplateContent(task, color, width, 'summary');
       return html`
         <div class="summary-bar ${selected ? 'selected' : ''}" data-task-id=${task.id} style="left:${left}px; width:${Math.max(24, width)}px; --summary-color:${color};"
-             title="${task.name} · ${task.start} → ${task.end}"
+             aria-label=${task.name}
              @click=${(event: Event) => { event.stopPropagation(); this.selectTask(task.id); }}
+             @pointerenter=${(event: PointerEvent) => this.openTaskTooltip(event, task, color, 'summary')}
+             @pointermove=${this.moveTaskTooltip}
+             @pointerleave=${this.closeTaskTooltip}
              @pointerdown=${(event: PointerEvent) => this.startBarDrag(event, task, 'move')}>
           <span class="summary-cap start"></span><span class="summary-cap end"></span><div class="summary-label"><span>${task.name}</span>${template !== undefined ? html`<span class="summary-template">${template}</span>` : nothing}</div>
         </div>
@@ -1397,8 +1518,11 @@ export class GanttChart extends LitElement {
       let remainingProgressWidth = segments.reduce((total, segment) => total + segment.width, 0) * Math.min(100, Math.max(0, task.progress)) / 100;
       return html`
         <div class="task-work ${selected ? 'selected' : ''}" data-task-id=${task.id} style="left:${left}px; width:${width}px; --bar-color:${color};"
-             title="${task.name} · ${task.start} → ${task.end}"
+             aria-label=${task.name}
              @click=${(event: Event) => { event.stopPropagation(); this.selectTask(task.id); }}
+             @pointerenter=${(event: PointerEvent) => this.openTaskTooltip(event, task, color, 'task')}
+             @pointermove=${this.moveTaskTooltip}
+             @pointerleave=${this.closeTaskTooltip}
              @pointerdown=${(event: PointerEvent) => this.startBarDrag(event, task, 'move')}>
           <div class="task-span"></div>
           ${segments.map(segment => {
@@ -1412,11 +1536,15 @@ export class GanttChart extends LitElement {
         </div>
       `;
     }
+    const milestoneTemplate = milestone ? this.getTaskBarTemplateContent(task, color, width, 'milestone') : undefined;
     return html`
       <div class="task-bar ${milestone ? 'milestone' : ''} ${selected ? 'selected' : ''}" data-task-id=${task.id}
            style="left:${left}px; width:${milestone ? 17 : width}px; --bar-color:${color}; --progress:${task.progress}%"
-           title="${task.name} · ${task.start} → ${task.end}"
+           aria-label=${task.name}
            @click=${(event: Event) => { event.stopPropagation(); this.selectTask(task.id); }}
+           @pointerenter=${(event: PointerEvent) => this.openTaskTooltip(event, task, color, 'task')}
+           @pointermove=${this.moveTaskTooltip}
+           @pointerleave=${this.closeTaskTooltip}
            @pointerdown=${(event: PointerEvent) => this.startBarDrag(event, task, 'move')}>
         ${milestone ? nothing : html`
           <div class="progress-fill"></div>
@@ -1425,12 +1553,20 @@ export class GanttChart extends LitElement {
           <span class="resize-handle end" @pointerdown=${(event: PointerEvent) => this.startBarDrag(event, task, 'resize-end')}></span>
         `}
       </div>
+      ${milestoneTemplate !== undefined ? html`<div class="milestone-template" style="left:${left + 23}px; --milestone-color:${color};">${milestoneTemplate}</div>` : nothing}
     `;
   }
 
   private renderTaskBarContent(task: GanttTask, color: string, width: number) {
-    const content = this.options.taskBarTemplate?.({ task, color, width, durationDays: this.getTaskDurationDays(task), kind: 'task' });
+    const content = this.getTaskBarTemplateContent(task, color, width, 'task');
     return html`<span class="bar-label">${task.name}</span>${content !== undefined ? html`<span class="task-bar-template">${content}</span>` : nothing}`;
+  }
+
+  private getTaskBarTemplateContent(task: GanttTask, color: string, width: number, kind: GanttTaskBarKind): unknown {
+    const context = { task, color, width, durationDays: this.getTaskDurationDays(task), kind };
+    if (kind === 'milestone') return this.options.milestoneTemplate?.(context);
+    if (kind === 'summary') return this.options.phaseTemplate?.(context) ?? this.options.taskBarTemplate?.(context) ?? this.options.summaryTemplate?.(task);
+    return this.options.taskTemplate?.(context) ?? this.options.taskBarTemplate?.(context);
   }
 
   private renderTimelineHeader(start: Date, totalDays: number, dayWidth: number) {
@@ -1442,7 +1578,7 @@ export class GanttChart extends LitElement {
     });
     const months: Array<{ date: Date; label: string; count: number }> = [];
     for (const date of dates) {
-      const label = getMonthLabel(date, this.getLocale());
+      const label = this.getMonthLabel(date);
       const current = months[months.length - 1];
       if (current?.label === label) current.count += 1;
       else months.push({ date, label, count: 1 });
@@ -1506,16 +1642,16 @@ export class GanttChart extends LitElement {
 
   private renderDateHeaderCell(date: Date, area: 'gantt' | 'resources', index: number, template?: GanttDateHeaderTemplate) {
     if (!template) return date.getUTCDate();
-    const locale = this.getLocale();
+    const labels = this.getDateHeaderLabels(date);
     return template({
       date,
       area,
       index,
       day: date.getUTCDate(),
       weekNumber: this.getWeekNumber(date),
-      weekday: new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' }).format(date),
-      weekdayNarrow: new Intl.DateTimeFormat(locale, { weekday: 'narrow', timeZone: 'UTC' }).format(date),
-      title: this.formatDayTitle(date),
+      weekday: labels.weekday,
+      weekdayNarrow: labels.weekdayNarrow,
+      title: labels.title,
     });
   }
 
@@ -1833,67 +1969,86 @@ export class GanttChart extends LitElement {
     const scrollLeft = (event.currentTarget as HTMLElement).scrollLeft;
     const header = this.renderRoot.querySelector<HTMLElement>('.task-header');
     const [scrollbar] = this.renderRoot.querySelectorAll<HTMLElement>('.gantt-horizontal-scroll');
-    if (header) header.scrollLeft = scrollLeft;
-    if (scrollbar) scrollbar.scrollLeft = scrollLeft;
+    this.setScrollLeft(header, scrollLeft);
+    this.setScrollLeft(scrollbar, scrollLeft);
   };
 
   private syncTimelineHeaderScroll = (event: Event): void => {
     const timeline = event.currentTarget as HTMLElement;
-    this.synchronizeTimelineScroll(timeline.scrollLeft, timeline);
+    this.scheduleTimelineSynchronization(timeline.scrollLeft, timeline);
   };
 
   private syncTaskGridScroll = (event: Event): void => {
     const scrollLeft = (event.currentTarget as HTMLElement).scrollLeft;
     const grid = this.renderRoot.querySelector<HTMLElement>('.task-pane');
     const header = this.renderRoot.querySelector<HTMLElement>('.task-header');
-    if (grid) grid.scrollLeft = scrollLeft;
-    if (header) header.scrollLeft = scrollLeft;
+    this.setScrollLeft(grid, scrollLeft);
+    this.setScrollLeft(header, scrollLeft);
   };
 
   private syncTimelineGridScroll = (event: Event): void => {
-    this.synchronizeTimelineScroll((event.currentTarget as HTMLElement).scrollLeft);
+    const scrollbar = event.currentTarget as HTMLElement;
+    this.scheduleTimelineSynchronization(scrollbar.scrollLeft, scrollbar);
   };
 
   private syncResourceLeftHeaderScroll = (event: Event): void => {
     const scrollLeft = (event.currentTarget as HTMLElement).scrollLeft;
     const header = this.renderRoot.querySelector<HTMLElement>('.resource-left-header');
     const [scrollbar] = this.renderRoot.querySelectorAll<HTMLElement>('.resource-horizontal-scroll');
-    if (header) header.scrollLeft = scrollLeft;
-    if (scrollbar) scrollbar.scrollLeft = scrollLeft;
+    this.setScrollLeft(header, scrollLeft);
+    this.setScrollLeft(scrollbar, scrollLeft);
   };
 
   private syncResourceTimelineHeaderScroll = (event: Event): void => {
     const timeline = event.currentTarget as HTMLElement;
-    this.synchronizeTimelineScroll(timeline.scrollLeft, timeline);
+    this.scheduleTimelineSynchronization(timeline.scrollLeft, timeline);
   };
 
   private syncResourceLeftGridScroll = (event: Event): void => {
     const scrollLeft = (event.currentTarget as HTMLElement).scrollLeft;
     const grid = this.renderRoot.querySelector<HTMLElement>('.resources-left');
     const header = this.renderRoot.querySelector<HTMLElement>('.resource-left-header');
-    if (grid) grid.scrollLeft = scrollLeft;
-    if (header) header.scrollLeft = scrollLeft;
+    this.setScrollLeft(grid, scrollLeft);
+    this.setScrollLeft(header, scrollLeft);
   };
 
   private syncResourceTimelineGridScroll = (event: Event): void => {
-    this.synchronizeTimelineScroll((event.currentTarget as HTMLElement).scrollLeft);
+    const scrollbar = event.currentTarget as HTMLElement;
+    this.scheduleTimelineSynchronization(scrollbar.scrollLeft, scrollbar);
   };
+
+  /** Regroupe les événements de défilement jumeaux à une synchronisation par image. */
+  private scheduleTimelineSynchronization(scrollLeft: number, source?: HTMLElement): void {
+    this.pendingTimelineSynchronization = { scrollLeft, source };
+    if (this.timelineSynchronizationFrame !== undefined) return;
+    this.timelineSynchronizationFrame = window.requestAnimationFrame(() => {
+      this.timelineSynchronizationFrame = undefined;
+      const pending = this.pendingTimelineSynchronization;
+      this.pendingTimelineSynchronization = undefined;
+      if (pending) this.synchronizeTimelineScroll(pending.scrollLeft, pending.source);
+    });
+  }
+
+  /** Évite les écritures de scroll inutiles qui relanceraient un événement de synchronisation. */
+  private setScrollLeft(target: HTMLElement | null | undefined, scrollLeft: number): void {
+    if (target && Math.abs(target.scrollLeft - scrollLeft) > .5) target.scrollLeft = scrollLeft;
+  }
 
   /** Synchronises headers, scrollbars and both date grids from either timeline. */
   private synchronizeTimelineScroll(scrollLeft: number, source?: HTMLElement): void {
     const timeline = this.renderRoot.querySelector<HTMLElement>('.timeline-scroll');
     const resourceTimeline = this.renderRoot.querySelector<HTMLElement>('.resource-timeline');
     for (const target of [timeline, resourceTimeline]) {
-      if (target && target !== source && Math.abs(target.scrollLeft - scrollLeft) > .5) target.scrollLeft = scrollLeft;
+      if (target !== source) this.setScrollLeft(target, scrollLeft);
     }
     const timelineHeader = this.renderRoot.querySelector<HTMLElement>('.timeline-header');
     const resourceHeader = this.renderRoot.querySelector<HTMLElement>('.resource-day-header');
     const [, ganttScrollbar] = this.renderRoot.querySelectorAll<HTMLElement>('.gantt-horizontal-scroll');
     const [, resourceScrollbar] = this.renderRoot.querySelectorAll<HTMLElement>('.resource-horizontal-scroll');
-    if (timelineHeader) timelineHeader.scrollLeft = scrollLeft;
-    if (resourceHeader) resourceHeader.scrollLeft = scrollLeft;
-    if (ganttScrollbar) ganttScrollbar.scrollLeft = scrollLeft;
-    if (resourceScrollbar) resourceScrollbar.scrollLeft = scrollLeft;
+    this.setScrollLeft(timelineHeader, scrollLeft);
+    this.setScrollLeft(resourceHeader, scrollLeft);
+    this.setScrollLeft(ganttScrollbar, scrollLeft);
+    this.setScrollLeft(resourceScrollbar, scrollLeft);
     if (resourceTimeline) this.updateResourceTimelineViewport(resourceTimeline.scrollLeft, resourceTimeline.clientWidth);
   }
 
@@ -1922,23 +2077,58 @@ export class GanttChart extends LitElement {
 
   private handleDragStart(event: DragEvent, taskId: string): void {
     this.draggedTaskId = taskId;
+    this.clearTaskDropTarget();
     event.dataTransfer?.setData('text/plain', taskId);
     if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
   }
 
-  private handleDragOver(event: DragEvent): void {
-    if (this.draggedTaskId) { event.preventDefault(); if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'; }
+  private handleDragOver(event: DragEvent, targetTaskId: string): void {
+    const taskId = this.draggedTaskId;
+    if (!taskId || taskId === targetTaskId || this.isDescendant(targetTaskId, taskId)) return;
+    const target = this.findTask(targetTaskId);
+    if (!target) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    const row = event.currentTarget as HTMLElement;
+    const bounds = row.getBoundingClientRect();
+    const offset = Math.max(0, Math.min(bounds.height, event.clientY - bounds.top));
+    const position = target.type === 'parent'
+      ? (offset < bounds.height * 0.25 ? 'before' : offset > bounds.height * 0.75 ? 'after' : 'inside')
+      : this.getRelativeTaskDropPosition(taskId, targetTaskId);
+    if (this.taskDropTarget?.taskId !== targetTaskId || this.taskDropTarget.position !== position) {
+      this.taskDropTarget = { taskId: targetTaskId, position };
+      this.requestUpdate();
+    }
   }
 
-  private handleDrop(event: DragEvent, parentId: string): void {
+  private handleDrop(event: DragEvent, targetTaskId: string): void {
     event.preventDefault();
     const taskId = this.draggedTaskId || event.dataTransfer?.getData('text/plain');
+    const target = this.findTask(targetTaskId);
+    const fallbackPosition = target?.type === 'parent' ? 'inside' : taskId ? this.getRelativeTaskDropPosition(taskId, targetTaskId) : 'after';
+    const position = this.taskDropTarget?.taskId === targetTaskId ? this.taskDropTarget.position : fallbackPosition;
     this.draggedTaskId = null;
-    if (taskId) this.moveTask(taskId, parentId);
+    this.clearTaskDropTarget();
+    if (!taskId) return;
+    if (position === 'inside') this.moveTask(taskId, targetTaskId);
+    else this.reorderTask(taskId, targetTaskId, position);
+  }
+
+  private clearTaskDropTarget = (): void => {
+    if (!this.taskDropTarget) return;
+    this.taskDropTarget = undefined;
+    this.requestUpdate();
+  };
+
+  /** A regular task accepts siblings only: moving upward means before, downward means after. */
+  private getRelativeTaskDropPosition(taskId: string, targetTaskId: string): 'before' | 'after' {
+    const tasks = this.getFlatTasks();
+    return tasks.findIndex(task => task.id === taskId) < tasks.findIndex(task => task.id === targetTaskId) ? 'after' : 'before';
   }
 
   private startBarDrag(event: PointerEvent, task: GanttTask, mode: 'move' | 'resize-start' | 'resize-end'): void {
     if (event.button !== 0) return;
+    this.closeTaskTooltip();
     event.preventDefault();
     event.stopPropagation();
     this.selectTask(task.id);
@@ -2184,6 +2374,15 @@ export class GanttChart extends LitElement {
     const visit = (tasks: GanttTask[]) => tasks.forEach(task => { result.push({ ...task, children: undefined }); if (task.children?.length) visit(task.children); });
     visit(this.tasks);
     return result;
+  }
+
+  /** Returns the contiguous tree branch to preserve when a row is repositioned. */
+  private getTaskSubtreeIds(rootId: string, tasks: GanttTask[]): Set<string> {
+    const ids = new Set<string>([rootId]);
+    for (let index = 0; index < tasks.length; index += 1) {
+      if (ids.has(tasks[index].parentId || '')) ids.add(tasks[index].id);
+    }
+    return ids;
   }
 
   /** Prépare les index nécessaires au rendu, une seule fois par mise à jour. */
@@ -2563,6 +2762,7 @@ export class GanttChart extends LitElement {
     this.ganttContextMenu = {
       x: Math.max(margin, Math.min(event.clientX, window.innerWidth - margin)),
       y: Math.max(margin, Math.min(event.clientY, window.innerHeight - margin)),
+      date: this.getTimelineDateAtClientX(event.clientX),
     };
     event.preventDefault();
     this.requestUpdate();
@@ -2579,6 +2779,22 @@ export class GanttChart extends LitElement {
     this.closeGanttContextMenu();
     this.fitGanttToView();
   };
+
+  private addTimelineItemFromContext(type: 'task' | 'parent'): void {
+    const start = this.ganttContextMenu?.date || formatDate(new Date());
+    this.ganttContextMenu = undefined;
+    const task = this.addChildTask('', { type, start, end: this.addDays(start, type === 'parent' ? 14 : 7) });
+    this.openTaskEditor(task.id);
+  }
+
+  /** Resolves the date represented by an empty timeline cell for contextual creation. */
+  private getTimelineDateAtClientX(clientX: number): string {
+    const timeline = this.renderRoot.querySelector<HTMLElement>('.timeline-scroll');
+    if (!timeline) return formatDate(new Date());
+    const range = this.alignRangeToWeeks(getDateRange(this.getFlatTasks()));
+    const x = Math.max(0, clientX - timeline.getBoundingClientRect().left + timeline.scrollLeft);
+    return this.addDays(formatDate(range.start), Math.floor(x / this.getDayWidth()));
+  }
 
   private openTaskContextMenu(taskId: string, event: MouseEvent): void {
     const margin = 8;
@@ -2869,6 +3085,38 @@ export class GanttChart extends LitElement {
     try { Intl.getCanonicalLocales(locale); return locale; } catch { return 'fr-FR'; }
   }
 
+  /** Réutilise les formateurs et libellés de dates, très sollicités par les en-têtes lors du défilement. */
+  private getDateFormatters() {
+    const locale = this.getLocale();
+    if (!this.dateFormatters || this.dateFormatterLocale !== locale) {
+      this.dateFormatterLocale = locale;
+      this.dateHeaderLabels.clear();
+      this.dateFormatters = {
+        month: new Intl.DateTimeFormat(locale, { month: 'short', year: 'numeric', timeZone: 'UTC' }),
+        weekday: new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' }),
+        weekdayNarrow: new Intl.DateTimeFormat(locale, { weekday: 'narrow', timeZone: 'UTC' }),
+        title: new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }),
+      };
+    }
+    return this.dateFormatters;
+  }
+
+  private getMonthLabel(date: Date): string { return this.getDateFormatters().month.format(date); }
+
+  private getDateHeaderLabels(date: Date): { weekday: string; weekdayNarrow: string; title: string } {
+    const formatters = this.getDateFormatters();
+    const key = formatDate(date);
+    const cached = this.dateHeaderLabels.get(key);
+    if (cached) return cached;
+    const labels = {
+      weekday: formatters.weekday.format(date),
+      weekdayNarrow: formatters.weekdayNarrow.format(date),
+      title: formatters.title.format(date),
+    };
+    this.dateHeaderLabels.set(key, labels);
+    return labels;
+  }
+
   private t(key: keyof GanttTranslations): string {
     const defaults = getBuiltInTranslations(this.getLocale());
     return this.options.translations?.[key] || defaults[key];
@@ -2912,9 +3160,7 @@ export class GanttChart extends LitElement {
     return { start, end };
   }
 
-  private formatDayTitle(date: Date): string {
-    return new Intl.DateTimeFormat(this.getLocale(), { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(date);
-  }
+  private formatDayTitle(date: Date): string { return this.getDateHeaderLabels(date).title; }
 
   private getNonWorkingDays(): number[] { return this.options.nonWorkingDays === undefined ? [0, 6] : this.options.nonWorkingDays.filter(day => Number.isInteger(day) && day >= 0 && day <= 6); }
   private isNonWorkingDay(date: Date): boolean { return this.getNonWorkingDays().includes(date.getUTCDay()); }
