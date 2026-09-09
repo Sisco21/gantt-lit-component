@@ -536,8 +536,12 @@ export class GanttChart extends LitElement {
 
   get options(): GanttOptions { return this._options; }
   set options(value: GanttOptions) {
+    const historyWasEnabled = this.isHistoryEnabled();
     this._options = value || {};
     this.numberFormatter = undefined;
+    if (!this.isHistoryEnabled()) this.clearHistory();
+    else if (!historyWasEnabled) this.resetHistory();
+    else this.trimHistory();
     this.requestUpdate();
   }
 
@@ -547,6 +551,10 @@ export class GanttChart extends LitElement {
   private projectName?: string;
   private projectMetadata?: Record<string, unknown>;
   private selectedTaskId: string | null = null;
+  private historyPast: GanttData[] = [];
+  private historyFuture: GanttData[] = [];
+  private historyCurrent?: GanttData;
+  private historyRestoring = false;
   private zoom = 1;
   private revision = 0;
   private statusMessage = '';
@@ -680,6 +688,10 @@ export class GanttChart extends LitElement {
           <span class="toolbar-separator"></span>
           <button @click=${this.saveLocal}>💾 ${this.t('saveLocal')}</button>
           <button @click=${this.loadLocal}>↶ ${this.t('loadLocal')}</button>
+          ${this.shouldShowHistoryControls() ? html`
+            <button @click=${this.undo} ?disabled=${!this.canUndo}>${this.t('undo')}</button>
+            <button @click=${this.redo} ?disabled=${!this.canRedo}>${this.t('redo')}</button>
+          ` : nothing}
           <span class="toolbar-separator"></span>
           <button @click=${() => this.addChildTask('')}>＋ ${this.t('addTask')}</button>
           <button class="danger" @click=${this.deleteSelected} ?disabled=${!this.selectedTaskId}>${this.t('delete')}</button>
@@ -748,6 +760,38 @@ export class GanttChart extends LitElement {
   setData(data: GanttData): void {
     this.applyData(data, 'set-data', true);
   }
+
+  /** True when at least one completed local action can be undone. */
+  get canUndo(): boolean { return this.isHistoryEnabled() && this.historyPast.length > 0; }
+
+  /** True when an undone action can be restored. */
+  get canRedo(): boolean { return this.isHistoryEnabled() && this.historyFuture.length > 0; }
+
+  /** Restores the state before the latest completed local action. */
+  undo = (): boolean => {
+    if (!this.canUndo || !this.historyCurrent) return false;
+    const previous = this.historyPast.pop();
+    if (!previous) return false;
+    this.historyFuture.push(this.cloneHistoryData(this.historyCurrent));
+    this.historyCurrent = this.cloneHistoryData(previous);
+    this.restoreHistory(this.historyCurrent, 'history-undo');
+    return true;
+  };
+
+  /** Reapplies the latest undone action. */
+  redo = (): boolean => {
+    if (!this.canRedo || !this.historyCurrent) return false;
+    const next = this.historyFuture.pop();
+    if (!next) return false;
+    this.historyPast.push(this.cloneHistoryData(this.historyCurrent));
+    this.trimHistory();
+    this.historyCurrent = this.cloneHistoryData(next);
+    this.restoreHistory(this.historyCurrent, 'history-redo');
+    return true;
+  };
+
+  /** Discards previous and future actions while keeping the current project as the new baseline. */
+  clearHistory = (): void => { this.resetHistory(); };
 
   /** Applies view and integration options and immediately refreshes the component. */
   setOptions(options: GanttOptions): void {
@@ -1755,6 +1799,7 @@ export class GanttChart extends LitElement {
     this.tasks = buildTaskTree(this.withDefaultTaskColors(scheduledTasks));
     this.projectName = data.name;
     this.projectMetadata = data.metadata ? { ...data.metadata } : undefined;
+    if (!this.historyRestoring) this.resetHistory();
     this.requestUpdate();
     if (notify) this.commit(reason);
   }
@@ -1767,6 +1812,7 @@ export class GanttChart extends LitElement {
 
   private commit(reason: GanttChangeReason, taskId?: string): void {
     const change = this.createChange(reason, taskId);
+    this.recordHistory(change.data);
     this.dispatch('tasks-changed', change);
     this.options.onTasksChange?.(change.data);
     if (this.autoSave && (this.persistenceAdapter || this.saveHook)) {
@@ -1779,6 +1825,53 @@ export class GanttChart extends LitElement {
       });
     }
   }
+
+  private isHistoryEnabled(): boolean { return this._options.history?.enabled === true; }
+
+  private getHistoryLimit(): number {
+    const value = this._options.history?.maxActions;
+    return Number.isFinite(value) ? Math.max(0, Math.floor(Number(value))) : 50;
+  }
+
+  private shouldShowHistoryControls(): boolean { return this.isHistoryEnabled() && this._options.history?.showControls !== false; }
+
+  private resetHistory(data: GanttData = this.getData()): void {
+    this.historyPast = [];
+    this.historyFuture = [];
+    this.historyCurrent = this.isHistoryEnabled() ? this.cloneHistoryData(data) : undefined;
+  }
+
+  private recordHistory(data: GanttData): void {
+    if (!this.isHistoryEnabled() || this.historyRestoring) return;
+    const snapshot = this.cloneHistoryData(data);
+    if (!this.historyCurrent) {
+      this.historyCurrent = snapshot;
+      return;
+    }
+    if (this.serializeHistoryData(this.historyCurrent) === this.serializeHistoryData(snapshot)) return;
+    this.historyPast.push(this.historyCurrent);
+    this.trimHistory();
+    this.historyFuture = [];
+    this.historyCurrent = snapshot;
+  }
+
+  private trimHistory(): void {
+    const limit = this.getHistoryLimit();
+    if (this.historyPast.length > limit) this.historyPast.splice(0, this.historyPast.length - limit);
+  }
+
+  private restoreHistory(data: GanttData, reason: 'history-undo' | 'history-redo'): void {
+    this.historyRestoring = true;
+    try {
+      this.applyData(this.cloneHistoryData(data), reason, true);
+    } finally {
+      this.historyRestoring = false;
+    }
+  }
+
+  private cloneHistoryData(data: GanttData): GanttData { return structuredClone(data); }
+
+  private serializeHistoryData(data: GanttData): string { return JSON.stringify(data); }
 
   private createChange(reason: GanttChangeReason, taskId?: string): GanttChange {
     return { projectId: this.projectId || null, revision: ++this.revision, reason, taskId, data: this.getData() };
@@ -2072,8 +2165,42 @@ export class GanttChart extends LitElement {
   }
 
   private handleKeyDown = (event: KeyboardEvent): void => {
-    if (event.key === 'Delete' && this.selectedTaskId && !['INPUT', 'TEXTAREA'].includes((event.target as HTMLElement)?.tagName)) this.deleteTask(this.selectedTaskId);
+    if (this.isEditableKeyboardTarget(event.target)) return;
+    if (this.matchesHistoryShortcut(event, this.options.history?.undoShortcut ?? ['Ctrl+z', 'Meta+z'])) {
+      if (this.undo()) event.preventDefault();
+      return;
+    }
+    if (this.matchesHistoryShortcut(event, this.options.history?.redoShortcut ?? ['Ctrl+y', 'Ctrl+Shift+z', 'Meta+y', 'Meta+Shift+z'])) {
+      if (this.redo()) event.preventDefault();
+      return;
+    }
+    if (event.key === 'Delete' && this.selectedTaskId) this.deleteTask(this.selectedTaskId);
   };
+
+  private isEditableKeyboardTarget(target: EventTarget | null): boolean {
+    const element = target as HTMLElement | null;
+    return Boolean(element?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(element?.tagName || ''));
+  }
+
+  private matchesHistoryShortcut(event: KeyboardEvent, shortcut: string | string[] | false): boolean {
+    if (!this.isHistoryEnabled() || shortcut === false) return false;
+    const candidates = Array.isArray(shortcut) ? shortcut : [shortcut];
+    return candidates.some(candidate => {
+      const parts = candidate.toLowerCase().split('+').map(part => part.trim()).filter(Boolean);
+      const key = parts.pop();
+      if (!key) return false;
+      const needsCtrl = parts.includes('ctrl') || parts.includes('control');
+      const needsMeta = parts.includes('meta') || parts.includes('cmd') || parts.includes('command');
+      const needsShift = parts.includes('shift');
+      const needsAlt = parts.includes('alt') || parts.includes('option');
+      const normalizedKey = key === 'space' ? ' ' : key;
+      return event.key.toLowerCase() === normalizedKey
+        && event.ctrlKey === needsCtrl
+        && event.metaKey === needsMeta
+        && event.shiftKey === needsShift
+        && event.altKey === needsAlt;
+    });
+  }
 
   private handleDragStart(event: DragEvent, taskId: string): void {
     this.draggedTaskId = taskId;

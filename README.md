@@ -359,6 +359,8 @@ Useful public editing methods for an external editor are:
 | `addResource(taskId, resource?)` | Add an assignment to a task. |
 | `moveTask(taskId, parentId)` | Move a task to another parent. |
 | `reorderTask(taskId, targetTaskId, position)` | Place a task and its descendants before or after another task at the same level. |
+| `undo()` / `redo()` | Restore or reapply the latest local action. Both return `true` when an action was applied. |
+| `clearHistory()` | Remove all undoable and redoable actions, keeping the current state as the baseline. |
 | `addDependency(from, to, type?)` | Create a task relationship. |
 | `removeDependency(from, to)` | Remove a task relationship. |
 | `fitTaskToView(taskId?)` | Zoom and centre one task in the Gantt timeline. |
@@ -366,6 +368,24 @@ Useful public editing methods for an external editor are:
 | `setData(data)` | Apply a complete host-managed data update. |
 
 Every mutation above emits `tasks-changed`, so persistence and application state remain consistent whichever editor is used.
+
+### Undo and redo
+
+Undo/redo is local to the component and disabled by default. It records each completed edit as one action: grid edits, task movement and resizing, hierarchy changes, resources, dependencies, and task creation/deletion. Imports and calls to `setData()` deliberately start a new history, because the host supplied a new project state.
+
+```ts
+gantt.setOptions({
+  history: {
+    enabled: true,
+    maxActions: 50,
+    showControls: true,
+    undoShortcut: ['Ctrl+z', 'Meta+z'],
+    redoShortcut: ['Ctrl+y', 'Ctrl+Shift+z', 'Meta+y', 'Meta+Shift+z'],
+  },
+});
+```
+
+Set `enabled: false` to turn the feature off, `showControls: false` to keep only the public methods and shortcuts, or a shortcut to `false` to disable that shortcut. The built-in toolbar buttons automatically reflect `canUndo` and `canRedo`. Changes caused by these actions emit `tasks-changed` with reason `history-undo` or `history-redo`.
 
 ### Reorder tasks from the tree
 

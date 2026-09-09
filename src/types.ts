@@ -197,6 +197,23 @@ export interface GanttTaskBarTemplateContext {
 /** Renders the content of a task, phase summary or milestone label. The interactions remain managed by the component. */
 export type GanttTaskBarTemplate = (context: GanttTaskBarTemplateContext) => unknown;
 
+/** One or more keyboard shortcuts such as `Ctrl+z` or `Meta+Shift+z`. Set false to disable it. */
+export type GanttHistoryShortcut = string | string[] | false;
+
+/** Optional local undo/redo history maintained by the component. */
+export interface GanttHistoryOptions {
+  /** Enables local undo/redo. Defaults to false. */
+  enabled?: boolean;
+  /** Maximum number of completed actions retained. Defaults to 50. Use 0 to keep no undoable action. */
+  maxActions?: number;
+  /** Shows Undo and Redo buttons in the component toolbar. Defaults to true when history is enabled. */
+  showControls?: boolean;
+  /** Defaults to Ctrl+Z and Meta+Z. */
+  undoShortcut?: GanttHistoryShortcut;
+  /** Defaults to Ctrl+Y, Ctrl+Shift+Z, Meta+Y and Meta+Shift+Z. */
+  redoShortcut?: GanttHistoryShortcut;
+}
+
 /** Context passed when the host customizes a task-bar tooltip. */
 export interface GanttTaskTooltipTemplateContext {
   task: GanttTask;
@@ -261,6 +278,8 @@ export interface GanttTranslations {
   exportMppUnavailable: string;
   saveLocal: string;
   loadLocal: string;
+  undo: string;
+  redo: string;
   addTask: string;
   addPhase: string;
   delete: string;
@@ -435,6 +454,8 @@ export interface GanttOptions {
   phaseTemplate?: GanttTaskBarTemplate;
   /** Content displayed beside a milestone diamond. */
   milestoneTemplate?: GanttTaskBarTemplate;
+  /** Optional local undo/redo history, including its toolbar controls and keyboard shortcuts. */
+  history?: GanttHistoryOptions;
   /** Set false to disable task-bar tooltips. Defaults to true. */
   showTaskTooltips?: boolean;
   /** Replaces the content of the task-bar tooltip while keeping its positioning and visual shell. */
@@ -501,6 +522,8 @@ export type GanttChangeReason =
   | 'task-deleted'
   | 'task-moved'
   | 'dependency-updated'
+  | 'history-undo'
+  | 'history-redo'
   | 'imported';
 
 export interface GanttChange {

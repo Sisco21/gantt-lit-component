@@ -146,6 +146,12 @@ const demoOptions: GanttOptions = {
   nonWorkingDays: [0, 6], // Sunday and Saturday
   // Drag from an empty timeline cell to browse the plan without using its scrollbars.
   pan: { enabled: true, axis: 'both', trigger: 'empty-area' },
+  history: {
+    enabled: true,
+    maxActions: 50,
+    undoShortcut: ['Ctrl+z', 'Meta+z'],
+    redoShortcut: ['Ctrl+y', 'Ctrl+Shift+z', 'Meta+y', 'Meta+Shift+z'],
+  },
   autoSchedule: true,
   showToday: true,
   showDependencies: true,
@@ -187,7 +193,7 @@ const demoOptions: GanttOptions = {
   },
   taskTemplate: ({ task, durationDays }) => html`${durationDays} j · ${task.progress}%`,
   phaseTemplate: ({ task }) => html`${new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 }).format(summaryCostWithCoefficient(task))} €`,
-  milestoneTemplate: ({ task, durationDays }) => html`${task.name} · ${durationDays} j`,
+  milestoneTemplate: ({ task, durationDays }) => html`${task.name}`,
   // The tooltip receives the original task object, its resolved colour and assigned resources.
   taskTooltipTemplate: ({ task, color, durationDays, resources, kind }) => html`
     <div class="task-tooltip-title"><span class="task-tooltip-accent" style="--tooltip-color:${color}"></span><span>${task.name}</span></div>
