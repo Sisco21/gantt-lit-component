@@ -414,6 +414,9 @@ export class GanttChart extends LitElement {
     .task-context-menu button { width: 100%; border: 0; text-align: left; }
     .task-editor-backdrop { position: fixed; inset: 0; z-index: 100; background: rgb(15 23 42 / 28%); }
     .task-editor-dialog { position: fixed; top: 50%; left: 50%; z-index: 101; display: flex; flex-direction: column; width: min(760px, calc(100vw - 32px)); max-height: min(690px, calc(100vh - 32px)); overflow: hidden; border: 1px solid var(--gantt-control-border); border-radius: 10px; background: var(--gantt-surface); box-shadow: 0 20px 50px rgb(15 23 42 / 28%); transform: translate(-50%, -50%); }
+    .resource-picker-backdrop { position: fixed; inset: 0; z-index: 102; background: rgb(15 23 42 / 28%); }
+    .resource-picker-dialog { position: fixed; top: 50%; left: 50%; z-index: 103; display: flex; flex-direction: column; width: min(580px, calc(100vw - 32px)); max-height: min(620px, calc(100vh - 32px)); overflow: hidden; border: 1px solid var(--gantt-control-border); border-radius: 10px; background: var(--gantt-surface); box-shadow: 0 20px 50px rgb(15 23 42 / 28%); transform: translate(-50%, -50%); }
+    .resource-picker-body { display: grid; gap: 12px; min-height: 0; overflow: auto; padding: 16px; }
     .task-editor-header { display: flex; align-items: center; gap: 12px; padding: 13px 16px; border-bottom: 1px solid var(--gantt-border); }
     .task-editor-header strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .task-editor-header button { margin-left: auto; }
@@ -528,6 +531,7 @@ export class GanttChart extends LitElement {
   private taskEditorId?: string;
   private taskEditorTab: 'general' | 'resources' | 'links' = 'general';
   private taskEditorLinkType: GanttDependency['type'] = 'finish-to-start';
+  private resourcePickerTaskId?: string;
   private resourceReferenceQuery = '';
   private resourceReferenceResults: GanttResourceReference[] = [];
   private resourceReferenceLoading = false;
@@ -693,6 +697,7 @@ export class GanttChart extends LitElement {
         ${this.renderResourceContextMenu()}
         ${this.renderTaskContextMenu()}
         ${this.renderTaskEditor()}
+        ${this.renderResourcePicker()}
       </div>
     `;
   }
@@ -1189,6 +1194,7 @@ export class GanttChart extends LitElement {
       updateTask: (patch: Partial<GanttTask>) => this.updateTask(task.id, patch),
       moveTask: (parentId: string | null) => this.moveTask(task.id, parentId),
       addResource: (resource: Partial<GanttResource> = {}) => this.addResource(task.id, resource),
+      openResourcePicker: () => this.openResourcePicker(task.id),
       removeResource: (resourceId: string) => this.removeResource(task.id, resourceId),
       addDependency: (fromTaskId: string, type?: GanttDependency['type']) => this.addDependency(fromTaskId, task.id, type),
       removeDependency: (fromTaskId: string) => this.removeDependency(fromTaskId, task.id),
@@ -1223,14 +1229,26 @@ export class GanttChart extends LitElement {
     const resources = task.resources || [];
     return html`
       <div class="editor-section">
-        <div class="editor-actions"><button class="primary" @click=${() => this.addResource(task.id)}>＋ ${this.t('addResource')}</button></div>
-        ${this.resourceProvider ? html`
-          <div class="reference-search"><label>${this.t('resourceCatalogue')}<input placeholder=${this.t('searchResource')} .value=${this.resourceReferenceQuery} @input=${this.searchResourceReferences} /></label></div>
-          ${this.resourceReferenceLoading ? html`<div class="editor-empty">${this.t('searching')}</div>` : nothing}
-          ${this.resourceReferenceResults.length ? html`<div class="reference-results">${this.resourceReferenceResults.map(reference => html`<div class="reference-result"><span>${reference.name}</span><small>${reference.type || this.t('resource')}</small><button @click=${() => this.addResourceFromReference(task.id, reference)}>${this.t('add')}</button></div>`)}</div>` : nothing}
-        ` : html`<div class="editor-empty">Le référentiel peut être connecté plus tard avec <code>resourceProvider</code>.</div>`}
+        <div class="editor-actions"><button class="primary" @click=${() => this.openResourcePicker(task.id)}>＋ ${this.t('addResource')}</button></div>
+        ${!this.resourceProvider && !this.options.resourcePicker ? html`<div class="editor-empty">Le référentiel peut être connecté plus tard avec <code>resourceProvider</code>.</div>` : nothing}
         ${resources.length ? html`<div class="editor-resource-list">${resources.map(resource => html`<div class="editor-resource-row"><span>${resource.name}</span><small>${resource.type} · ${this.formatNumber(this.getResourceCost(resource))} €</small><button class="danger" @click=${() => this.removeResource(task.id, resource.id)}>×</button></div>`)}</div>` : html`<div class="editor-empty">${this.t('noResourceAssigned')}</div>`}
       </div>
+    `;
+  }
+
+  private renderResourcePicker() {
+    const task = this.findTask(this.resourcePickerTaskId || null);
+    if (!task) return nothing;
+    return html`
+      <div class="resource-picker-backdrop" @click=${this.closeResourcePicker}></div>
+      <section class="resource-picker-dialog" role="dialog" aria-modal="true" aria-label="${this.t('resourceCatalogue')} — ${task.name}">
+        <header class="task-editor-header"><strong>${this.t('resourceCatalogue')} — ${task.name}</strong><button aria-label=${this.t('close')} @click=${this.closeResourcePicker}>×</button></header>
+        <div class="resource-picker-body">
+          <div class="reference-search"><label>${this.t('searchResource')}<input autofocus placeholder=${this.t('searchResource')} .value=${this.resourceReferenceQuery} @input=${this.searchResourceReferences} /></label></div>
+          ${this.resourceReferenceLoading ? html`<div class="editor-empty">${this.t('searching')}</div>` : nothing}
+          ${this.resourceReferenceResults.length ? html`<div class="reference-results">${this.resourceReferenceResults.map(reference => html`<div class="reference-result"><span>${reference.name}</span><small>${reference.type || this.t('resource')}</small><button @click=${() => this.assignPickedResource(reference)}>${this.t('add')}</button></div>`)}</div>` : nothing}
+        </div>
+      </section>
     `;
   }
 
@@ -2260,6 +2278,7 @@ export class GanttChart extends LitElement {
   addResource(taskId: string, resource: Partial<GanttResource> = {}): GanttResource | null {
     const task = this.findTask(taskId);
     if (!task) return null;
+    const totalQuantity = resource.totalQuantity ?? resource.quantity ?? 1;
     const created: GanttResource = {
       id: resource.id || this.createId(),
       name: resource.name || 'Nouvelle ressource',
@@ -2273,6 +2292,11 @@ export class GanttChart extends LitElement {
       cost: resource.cost,
       metadata: resource.metadata,
     };
+    // Initialize the daily distribution when a resource is added. Without
+    // this, the total is visible but the daily inputs remain empty until the
+    // user edits Total quantity manually.
+    created.quantityByDate = resource.quantityByDate
+      ?? this.createDistributedQuantities(task.start, task.end, totalQuantity, created);
     const next = this.getFlatTasks().map(item => item.id === taskId ? { ...item, resources: [...(item.resources || []), created] } : item);
     this.replaceFlatTasks(next, 'task-updated', taskId);
     return created;
@@ -2357,7 +2381,7 @@ export class GanttChart extends LitElement {
 
   private addResourceFromContext = (): void => {
     const taskId = this.resourceContextMenu?.taskId;
-    if (taskId) this.addResource(taskId);
+    if (taskId) this.openResourcePicker(taskId);
     this.closeResourceContextMenu();
   };
 
@@ -2422,14 +2446,54 @@ export class GanttChart extends LitElement {
     this.taskEditorId = taskId;
     this.taskEditorTab = tab;
     this.requestUpdate();
-    if (this.resourceProvider) void this.loadResourceReferences('');
   }
 
   private closeTaskEditor = (): void => {
     this.taskEditorId = undefined;
+    this.closeResourcePicker();
+  };
+
+  private openResourcePicker(taskId: string): void {
+    const task = this.findTask(taskId);
+    if (!task) return;
+    const hostPicker = this.options.resourcePicker;
+    if (hostPicker) {
+      try {
+        void Promise.resolve(hostPicker({
+          task,
+          assignReference: reference => this.addResourceFromReference(task.id, reference),
+          addResource: (resource = {}) => this.addResource(task.id, resource),
+        })).catch(error => this.setStatus(error instanceof Error ? error.message : 'Sélection de ressource indisponible', 'error'));
+      } catch (error) {
+        this.setStatus(error instanceof Error ? error.message : 'Sélection de ressource indisponible', 'error');
+      }
+      return;
+    }
+    if (!this.resourceProvider) {
+      this.addResource(task.id);
+      return;
+    }
+    this.resourcePickerTaskId = task.id;
     this.resourceReferenceQuery = '';
     this.resourceReferenceResults = [];
     this.requestUpdate();
+    void this.loadResourceReferences('');
+  }
+
+  private closeResourcePicker = (): void => {
+    this.resourcePickerTaskId = undefined;
+    this.resourceReferenceRequest += 1;
+    this.resourceReferenceQuery = '';
+    this.resourceReferenceResults = [];
+    this.resourceReferenceLoading = false;
+    this.requestUpdate();
+  };
+
+  private assignPickedResource = (reference: GanttResourceReference): void => {
+    const taskId = this.resourcePickerTaskId;
+    if (!taskId) return;
+    this.addResourceFromReference(taskId, reference);
+    this.closeResourcePicker();
   };
 
   private searchResourceReferences = (event: Event): void => {
@@ -2460,7 +2524,13 @@ export class GanttChart extends LitElement {
   }
 
   private addResourceFromReference(taskId: string, reference: GanttResourceReference): void {
+    const task = this.findTask(taskId);
+    if (task?.resources?.some(resource => resource.resourceId === reference.id)) {
+      this.setStatus(`La ressource ${reference.name} est déjà affectée à cette tâche`, 'info');
+      return;
+    }
     this.addResource(taskId, {
+      resourceId: reference.id,
       name: reference.name,
       type: reference.type || 'work',
       unit: reference.unit || 'U',
@@ -2468,6 +2538,7 @@ export class GanttChart extends LitElement {
       quantity: reference.quantity ?? 1,
       calendarId: reference.calendarId,
       maxUnits: reference.maxUnits,
+      // catalogId remains for backward compatibility with earlier integrations.
       metadata: { ...reference.metadata, catalogId: reference.id },
     });
   }

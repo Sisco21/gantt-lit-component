@@ -67,7 +67,10 @@ export interface GanttTask {
 }
 
 export interface GanttResource {
+  /** Identifier of this assignment inside the current task. */
   id: string;
+  /** Stable, unique identifier of the resource in the external catalogue or business system. */
+  resourceId?: string;
   name: string;
   type: GanttResourceType | string;
   unit?: string;
@@ -101,6 +104,18 @@ export interface GanttResourceReference {
 export interface GanttResourceProvider {
   search(query: string): Promise<GanttResourceReference[]>;
 }
+
+/** API exposed to a host-owned resource selection dialog. */
+export interface GanttResourcePickerContext {
+  task: GanttTask;
+  /** Creates an assignment from a catalogue result and preserves its catalogue ID. */
+  assignReference: (reference: GanttResourceReference) => void;
+  /** Creates a manual assignment when the host dialog permits it. */
+  addResource: (resource?: Partial<GanttResource>) => void;
+}
+
+/** Opens a host-owned modal or drawer used to select a resource for a task. */
+export type GanttResourcePicker = (context: GanttResourcePickerContext) => void | Promise<void>;
 
 export interface GanttDependency {
   from: string;
@@ -188,6 +203,7 @@ export interface GanttTaskEditorTemplateContext {
   updateTask: (patch: Partial<GanttTask>) => void;
   moveTask: (parentId: string | null) => void;
   addResource: (resource?: Partial<GanttResource>) => void;
+  openResourcePicker: () => void;
   removeResource: (resourceId: string) => void;
   addDependency: (fromTaskId: string, type?: DependencyType) => void;
   removeDependency: (fromTaskId: string) => void;
@@ -297,6 +313,8 @@ export interface GanttOptions {
   taskEditorMode?: 'built-in' | 'external';
   /** Replaces the body of the built-in editor with a host-provided Lit template. */
   taskEditorTemplate?: GanttTaskEditorTemplate;
+  /** Opens a host-owned modal or drawer when the user selects Add resource. */
+  resourcePicker?: GanttResourcePicker;
   /** IETF locale used for dates, numbers and built-in labels. Defaults to navigator.language. */
   locale?: string;
   /** First day of the displayed week. Uses UTC day numbers: 0 = Sunday, 1 = Monday. Defaults to 1. */

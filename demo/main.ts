@@ -1,12 +1,27 @@
 import { html } from 'lit';
 import '../src/gantt-chart';
 import type { GanttChart } from '../src/gantt-chart';
-import type { GanttData, GanttOptions, GanttResource, GanttTask } from '../src/types';
+import type { GanttData, GanttOptions, GanttResource, GanttResourceProvider, GanttResourceReference, GanttTask } from '../src/types';
 import sampleData from './data.json' with { type: 'json' };
 
 // JSON module imports widen literal values (for example, `type`) to `string`.
 // The bundled fixture is the component's canonical GanttData sample.
 const sampleProject = sampleData as GanttData;
+
+/** Simulates an external resource catalogue. Replace search() with an API call in a real product. */
+const demoResourceCatalogue: GanttResourceReference[] = [
+  { id: 'catalogue-worker-qualified', name: 'Qualified worker', type: 'work', unit: 'day', unitCost: 400, maxUnits: 8 },
+  { id: 'catalogue-site-barrier', name: 'Site barrier', type: 'material', unit: 'unit', unitCost: 50, maxUnits: 250 },
+  { id: 'catalogue-surveyor', name: 'Surveyor', type: 'work', unit: 'day', unitCost: 620, maxUnits: 2 },
+];
+
+const demoResourceProvider: GanttResourceProvider = {
+  async search(query) {
+    await new Promise<void>(resolve => window.setTimeout(resolve, 180));
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    return demoResourceCatalogue.filter(resource => !normalizedQuery || resource.name.toLocaleLowerCase().includes(normalizedQuery));
+  },
+};
 
 function getGantt(): GanttChart | null {
   return document.querySelector('gantt-chart') as GanttChart | null;
@@ -300,6 +315,7 @@ function configureDemo(): void {
   const gantt = getGantt();
   if (!gantt) return;
   gantt.setOptions(demoOptions);
+  gantt.resourceProvider = demoResourceProvider;
   const weekStart = document.getElementById('week-start') as HTMLSelectElement | null;
   const weekNumbering = document.getElementById('week-numbering') as HTMLSelectElement | null;
   if (weekStart) weekStart.value = String(demoOptions.firstDayOfWeek ?? 1);

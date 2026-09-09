@@ -201,13 +201,33 @@ const resourceProvider: GanttResourceProvider = {
 gantt.resourceProvider = resourceProvider;
 ```
 
-In the built-in task editor, searching resources calls `resourceProvider.search(query)`. When a user adds a result, the component creates an assignment with a fresh assignment ID and stores the catalogue identifier in `resource.metadata.catalogId`. Keep any additional business fields in `metadata`.
+In the built-in task editor, **Add resource** opens a resource-picker modal; its search calls `resourceProvider.search(query)`. When a user adds a result, the component creates an assignment with a fresh `resource.id` and persists the external, stable unique identifier in `resource.resourceId`. The legacy `resource.metadata.catalogId` is also retained for backward compatibility. Keep any additional business fields in `metadata`.
+
+To keep the dialog entirely in your host application, provide `resourcePicker`. It can open any modal or drawer and calls `assignReference` after the user selects an API resource:
+
+```ts
+gantt.options = {
+  resourcePicker: ({ task, assignReference }) => {
+    hostResourceModal.open({
+      taskId: task.id,
+      onSelect: (resourceFromApi) => assignReference({
+        id: resourceFromApi.id, // stable external resource ID
+        name: resourceFromApi.name,
+        type: resourceFromApi.type,
+        unitCost: resourceFromApi.unitCost,
+        maxUnits: resourceFromApi.maxUnits,
+      }),
+    });
+  },
+};
+```
 
 An assigned resource can also contain daily quantities:
 
 ```ts
 {
   id: 'assignment-1',
+  resourceId: 'worker-42', // external unique resource ID
   name: 'Qualified worker',
   type: 'work',
   unit: 'day',
