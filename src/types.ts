@@ -57,6 +57,10 @@ export interface GanttTask {
   unitCost?: number;
   quantity?: number;
   quantityPerDay?: number;
+  /** Optional business budget used by the project summary. Falls back to calculated task cost. */
+  plannedCost?: number;
+  /** Optional cost already incurred, supplied by the host business system. */
+  actualCost?: number;
   fields?: Record<string, GanttFieldValue>;
   resources?: GanttResource[];
   /** Persisted task-bar colour. A default is added automatically when the task is imported or created. */
@@ -162,6 +166,8 @@ export interface GanttColumn {
   value?: (task: GanttTask) => unknown;
   /** Formats the computed or built-in value for display. */
   format?: (value: unknown, task: GanttTask) => string;
+  /** Applies the component's semantic positive, negative or neutral column tone. */
+  tone?: (value: unknown, task: GanttTask) => 'positive' | 'negative' | 'neutral' | undefined;
 }
 
 /** Configures a left-side column of the resource assignment grid. */
@@ -310,6 +316,7 @@ export interface GanttTranslations {
   type: string;
   color: string;
   progress: string;
+  actualCost: string;
   parent: string;
   root: string;
   start: string;
@@ -496,6 +503,8 @@ export interface GanttOptions {
   weekNumbering?: WeekNumbering;
   /** Days to shade as non-working. Uses UTC day numbers: 0 = Sunday, 6 = Saturday. Defaults to [0, 6]. */
   nonWorkingDays?: number[];
+  /** Date used to calculate overdue tasks in `GanttProjectSummary`. Defaults to today. */
+  summaryReferenceDate?: string;
   /** Enables mouse panning from an empty part of the Gantt timeline. */
   pan?: GanttPanOptions;
   /** Override individual built-in labels after locale selection. */
@@ -532,6 +541,44 @@ export interface GanttChange {
   reason: GanttChangeReason;
   taskId?: string;
   data: GanttData;
+}
+
+/** Compact project information emitted for host-owned status bars and footers. */
+export interface GanttProjectSummary {
+  /** Earliest task start, or null when the project has no tasks. */
+  start: string | null;
+  /** Latest task finish, or null when the project has no tasks. */
+  end: string | null;
+  /** Inclusive calendar duration between `start` and `end`. */
+  durationDays: number;
+  /** Inclusive project duration after excluding configured non-working days. */
+  workingDurationDays: number;
+  /** Date used to determine overdue tasks. */
+  referenceDate: string;
+  /** Number of normal tasks, excluding phases and milestones. */
+  taskCount: number;
+  phaseCount: number;
+  milestoneCount: number;
+  /** Duration-weighted progress of normal tasks and milestones, from 0 to 100. */
+  progress: number;
+  /** Incomplete work whose finish date falls before `referenceDate`. */
+  overdueTaskCount: number;
+  /** Nearest finish date among incomplete work that is not yet overdue. */
+  nextDueDate: string | null;
+  /** Sum of own task and resource costs; parent summaries are not counted twice. */
+  totalCost: number;
+  /** Total planned cost, using `plannedCost` when supplied. */
+  plannedCost: number;
+  /** Total actual cost supplied through `actualCost`. */
+  actualCost: number;
+  /** Actual minus planned cost. A positive amount is over budget. */
+  costVariance: number;
+  /** Distinct assigned resources, keyed by external `resourceId` when available. */
+  resourceCount: number;
+  /** Sum of assigned resource quantities across the planning. */
+  totalResourceQuantity: number;
+  /** Sum of configured capacity (`maxUnits`) for distinct resources. */
+  totalResourceCapacity: number;
 }
 
 export interface GanttPersistenceAdapter {

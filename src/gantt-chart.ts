@@ -16,6 +16,7 @@ import {
   GanttResourceColumn,
   GanttResourceProvider,
   GanttResourceReference,
+  GanttProjectSummary,
   GanttSaveHook,
   GanttTask,
   GanttTaskBarKind,
@@ -359,6 +360,8 @@ export class GanttChart extends LitElement {
     .task-cell.name { position: relative; }
     .task-cell.number { justify-content: flex-end; text-align: right; }
     .task-cell.parent { font-weight: 700; }
+    .task-cell.tone-positive { color: var(--gantt-green); font-weight: 700; }
+    .task-cell.tone-negative { color: var(--gantt-red); font-weight: 700; }
     .task-row .toggle { position: absolute; left: 2px; top: 0; z-index: 2; display: flex; align-items: center; justify-content: center; width: 19px; height: 100%; padding: 0; border: 0; background: transparent; color: var(--gantt-muted); font-size: 11px; }
     .task-row .toggle:disabled { cursor: default; }
     .task-cell.name .task-name { display: block; flex: 1 1 auto; min-width: 0; overflow: hidden; padding-right: 24px; padding-left: 19px; text-overflow: ellipsis; white-space: nowrap; }
@@ -543,6 +546,7 @@ export class GanttChart extends LitElement {
     else if (!historyWasEnabled) this.resetHistory();
     else this.trimHistory();
     this.requestUpdate();
+    this.emitProjectSummary();
   }
 
   private tasks: GanttTask[] = [];
@@ -820,6 +824,79 @@ export class GanttChart extends LitElement {
       dependencies: this.dependencies.map(dependency => ({ ...dependency })),
       calendars: this.calendars.map(calendar => ({ ...calendar, workingDays: calendar.workingDays ? [...calendar.workingDays] : undefined, hours: calendar.hours ? { ...calendar.hours } : undefined, exceptions: calendar.exceptions ? { ...calendar.exceptions } : undefined })),
       metadata: this.projectMetadata ? { ...this.projectMetadata } : undefined,
+    };
+  }
+
+  /** Returns the compact information emitted through `gantt-summary-changed`. */
+  getProjectSummary(): GanttProjectSummary {
+    const tasks = this.getFlatTasks();
+    const referenceDate = this.getSummaryReferenceDate();
+    if (!tasks.length) {
+      return {
+        start: null, end: null, durationDays: 0, workingDurationDays: 0, referenceDate,
+        taskCount: 0, phaseCount: 0, milestoneCount: 0, progress: 0, overdueTaskCount: 0, nextDueDate: null,
+        totalCost: 0, plannedCost: 0, actualCost: 0, costVariance: 0, resourceCount: 0, totalResourceQuantity: 0, totalResourceCapacity: 0,
+      };
+    }
+    const resources = new Set<string>();
+    const resourceCapacities = new Map<string, number>();
+    let totalCost = 0;
+    let plannedCost = 0;
+    let actualCost = 0;
+    let totalResourceQuantity = 0;
+    let taskCount = 0;
+    let phaseCount = 0;
+    let milestoneCount = 0;
+    let progressWeight = 0;
+    let weightedProgress = 0;
+    let overdueTaskCount = 0;
+    let nextDueDate: string | null = null;
+    let start = tasks[0].start;
+    let end = tasks[0].end;
+    for (const task of tasks) {
+      if (task.start < start) start = task.start;
+      if (task.end > end) end = task.end;
+      const assignedResources = task.resources || [];
+      const resourceCost = assignedResources.reduce((sum, resource) => {
+        const resourceKey = resource.resourceId || `${task.id}:${resource.id}`;
+        resources.add(resourceKey);
+        totalResourceQuantity += this.getResourceTotalQuantity(resource);
+        resourceCapacities.set(resourceKey, Math.max(resourceCapacities.get(resourceKey) || 0, Number(resource.maxUnits) || 0));
+        return sum + this.getResourceCost(resource);
+      }, 0);
+      const ownCost = resourceCost || Number(task.unitCost || task.metadata?.unitCost || 0) * Number(task.quantity || task.metadata?.quantity || 0);
+      totalCost += ownCost;
+      plannedCost += Number(task.plannedCost ?? task.metadata?.plannedCost ?? ownCost) || 0;
+      actualCost += Number(task.actualCost ?? task.metadata?.actualCost ?? 0) || 0;
+
+      if (task.type === 'parent') {
+        phaseCount += 1;
+        continue;
+      }
+      if (task.type === 'milestone') milestoneCount += 1;
+      else taskCount += 1;
+      const duration = Math.max(1, diffDays(task.start, task.end) + 1);
+      progressWeight += duration;
+      weightedProgress += duration * Math.max(0, Math.min(100, Number(task.progress) || 0));
+      if ((Number(task.progress) || 0) < 100) {
+        if (task.end < referenceDate) overdueTaskCount += 1;
+        else if (!nextDueDate || task.end < nextDueDate) nextDueDate = task.end;
+      }
+    }
+    let workingDurationDays = 0;
+    const date = parseDateOnly(start);
+    const lastDate = parseDateOnly(end);
+    while (date <= lastDate) {
+      if (!this.isNonWorkingDay(date)) workingDurationDays += 1;
+      date.setUTCDate(date.getUTCDate() + 1);
+    }
+    const roundedPlannedCost = this.roundQuantity(plannedCost);
+    const roundedActualCost = this.roundQuantity(actualCost);
+    return {
+      start, end, durationDays: Math.max(0, diffDays(start, end) + 1), workingDurationDays, referenceDate,
+      taskCount, phaseCount, milestoneCount, progress: this.roundQuantity(progressWeight ? weightedProgress / progressWeight : 0), overdueTaskCount, nextDueDate,
+      totalCost: this.roundQuantity(totalCost), plannedCost: roundedPlannedCost, actualCost: roundedActualCost, costVariance: this.roundQuantity(roundedActualCost - roundedPlannedCost),
+      resourceCount: resources.size, totalResourceQuantity: this.roundQuantity(totalResourceQuantity), totalResourceCapacity: this.roundQuantity([...resourceCapacities.values()].reduce((sum, capacity) => sum + capacity, 0)),
     };
   }
 
@@ -1172,10 +1249,11 @@ export class GanttChart extends LitElement {
   private renderTaskCell(task: GanttTask, column: GanttColumn, depth: number, hasChildren: boolean) {
     const value = this.getColumnValue(task, column);
     const isName = column.key === 'name';
-    const isNumber = column.type === 'number' || ['unitCost', 'quantity', 'quantityPerDay', 'duration', 'costTotal'].includes(column.key);
+    const isNumber = column.type === 'number' || ['unitCost', 'quantity', 'quantityPerDay', 'duration', 'costTotal', 'actualCost', 'plannedCost'].includes(column.key);
     const isPhase = task.type === 'parent';
+    const tone = column.tone?.(value, task);
     return html`
-      <div class="task-cell ${isName ? 'name' : ''} ${isNumber ? 'number' : ''} ${hasChildren || isPhase ? 'parent' : ''}" style="width:${this.getColumnWidth(column)}px" title=${value === null || value === undefined ? '' : String(value)}>
+      <div class="task-cell ${isName ? 'name' : ''} ${isNumber ? 'number' : ''} ${hasChildren || isPhase ? 'parent' : ''} ${tone ? `tone-${tone}` : ''}" style="width:${this.getColumnWidth(column)}px" title=${value === null || value === undefined ? '' : String(value)}>
         ${isName ? html`
           <button class="toggle" style="left:${2 + depth * 16}px" ?disabled=${!hasChildren} @click=${(event: Event) => { event.stopPropagation(); this.toggleTask(task.id); }} aria-label="Déplier ou replier" aria-expanded=${hasChildren ? String(!task.collapsed) : nothing}>
             ${hasChildren ? task.collapsed ? '▶' : '▼' : '·'}
@@ -1476,6 +1554,7 @@ export class GanttChart extends LitElement {
         </select></label>
         <label>${this.t('color')}<input type="color" .value=${this.getTaskColor(task)} @change=${(event: Event) => this.updateTask(task.id, { color: (event.target as HTMLInputElement).value })} /></label>
         <label>${this.t('progress')}<input type="number" min="0" max="100" step="1" .value=${String(task.progress)} @change=${(event: Event) => this.updateTask(task.id, { progress: Math.min(100, Math.max(0, Number((event.target as HTMLInputElement).value) || 0)) })} /></label>
+        <label>${this.t('actualCost')}<input type="number" min="0" step="0.01" .value=${task.actualCost === undefined ? '' : String(task.actualCost)} @change=${(event: Event) => { const value = (event.target as HTMLInputElement).value; this.updateTask(task.id, { actualCost: value === '' ? undefined : Math.max(0, Number(value) || 0) }); }} /></label>
         <label>${this.t('parent')}<select @change=${(event: Event) => this.moveTask(task.id, (event.target as HTMLSelectElement).value || null)}>
           <option value="">${this.t('root')}</option>${this.getParentOptions(task.id).map(parent => html`<option value=${parent.id} ?selected=${task.parentId === parent.id}>${parent.name}</option>`)}
         </select></label>
@@ -1802,6 +1881,7 @@ export class GanttChart extends LitElement {
     if (!this.historyRestoring) this.resetHistory();
     this.requestUpdate();
     if (notify) this.commit(reason);
+    else this.emitProjectSummary();
   }
 
   private replaceFlatTasks(tasks: GanttTask[], reason: GanttChangeReason, taskId?: string): void {
@@ -1814,6 +1894,7 @@ export class GanttChart extends LitElement {
     const change = this.createChange(reason, taskId);
     this.recordHistory(change.data);
     this.dispatch('tasks-changed', change);
+    this.emitProjectSummary();
     this.options.onTasksChange?.(change.data);
     if (this.autoSave && (this.persistenceAdapter || this.saveHook)) {
       const saves: Promise<void>[] = [];
@@ -1876,6 +1957,8 @@ export class GanttChart extends LitElement {
   private createChange(reason: GanttChangeReason, taskId?: string): GanttChange {
     return { projectId: this.projectId || null, revision: ++this.revision, reason, taskId, data: this.getData() };
   }
+
+  private emitProjectSummary(): void { this.dispatch('gantt-summary-changed', this.getProjectSummary()); }
 
   private renderStatus(message: string, kind: 'info' | 'success' | 'error'): void {
     this.statusMessage = message;
@@ -2638,6 +2721,8 @@ export class GanttChart extends LitElement {
       case 'start': return task.start;
       case 'end': return task.end;
       case 'costTotal': return this.getTaskCost(task);
+      case 'plannedCost': return task.plannedCost ?? task.metadata?.plannedCost ?? this.getTaskCost(task);
+      case 'actualCost': return task.actualCost ?? task.metadata?.actualCost ?? '';
       case 'unit': return task.unit || '';
       case 'unitCost': return task.unitCost ?? task.metadata?.unitCost ?? '';
       case 'quantity': return task.quantity ?? task.metadata?.quantity ?? '';
@@ -3288,6 +3373,11 @@ export class GanttChart extends LitElement {
   }
 
   private formatDayTitle(date: Date): string { return this.getDateHeaderLabels(date).title; }
+
+  private getSummaryReferenceDate(): string {
+    const configured = this.options.summaryReferenceDate;
+    return configured && /^\d{4}-\d{2}-\d{2}$/.test(configured) ? configured : formatDate(new Date());
+  }
 
   private getNonWorkingDays(): number[] { return this.options.nonWorkingDays === undefined ? [0, 6] : this.options.nonWorkingDays.filter(day => Number.isInteger(day) && day >= 0 && day <= 6); }
   private isNonWorkingDay(date: Date): boolean { return this.getNonWorkingDays().includes(date.getUTCDay()); }

@@ -1,7 +1,7 @@
 import { html, nothing } from 'lit';
 import '../src/gantt-chart';
 import type { GanttChart } from '../src/gantt-chart';
-import type { GanttData, GanttOptions, GanttResource, GanttResourceProvider, GanttResourceReference, GanttTask } from '../src/types';
+import type { GanttData, GanttOptions, GanttProjectSummary, GanttResource, GanttResourceProvider, GanttResourceReference, GanttTask } from '../src/types';
 import sampleData from './data.json' with { type: 'json' };
 
 // JSON module imports widen literal values (for example, `type`) to `string`.
@@ -25,6 +25,28 @@ const demoResourceProvider: GanttResourceProvider = {
 
 function getGantt(): GanttChart | null {
   return document.querySelector('gantt-chart') as GanttChart | null;
+}
+
+function updateProjectFooter(summary: GanttProjectSummary): void {
+  const formatDate = (value: string | null) => value
+    ? new Intl.DateTimeFormat(navigator.language, { dateStyle: 'medium' }).format(new Date(`${value}T00:00:00`))
+    : '—';
+  const formatCost = new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 });
+  const formatQuantity = new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 });
+  const values: Record<string, string> = {
+    'summary-start': formatDate(summary.start),
+    'summary-end': formatDate(summary.end),
+    'summary-duration': `${summary.durationDays} calendar · ${summary.workingDurationDays} working days`,
+    'summary-progress': `${formatQuantity.format(summary.progress)}%`,
+    'summary-items': `Tasks ${summary.taskCount} · Phases ${summary.phaseCount} · Milestones ${summary.milestoneCount}`,
+    'summary-schedule': `${summary.overdueTaskCount} overdue · Next ${formatDate(summary.nextDueDate)}`,
+    'summary-cost': `Total ${formatCost.format(summary.totalCost)} € · Actual ${formatCost.format(summary.actualCost)} € · Δ ${formatCost.format(summary.costVariance)} €`,
+    'summary-resources': `${summary.resourceCount} · Load ${formatQuantity.format(summary.totalResourceQuantity)} / Capacity ${formatQuantity.format(summary.totalResourceCapacity)}`,
+  };
+  Object.entries(values).forEach(([id, value]) => {
+    const output = document.getElementById(id);
+    if (output) output.textContent = value;
+  });
 }
 
 function roundQuantity(value: number): number {
@@ -115,6 +137,17 @@ function summaryCostWithCoefficient(task: GanttTask): number {
   return taskCostWithCoefficient(task) + (task.children || []).reduce((total, child) => total + summaryCostWithCoefficient(child), 0);
 }
 
+/** Actual cost minus the read-only Cost × coefficient value shown in the grid. */
+function costDelta(task: GanttTask): number {
+  return roundQuantity(Number(task.actualCost || 0) - taskCostWithCoefficient(task));
+}
+
+function formatSignedCost(value: unknown): string {
+  const amount = Number(value) || 0;
+  const sign = amount > 0 ? '🙁 −' : amount < 0 ? '😀 +' : '';
+  return `${sign}${new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 }).format(Math.abs(amount))} €`;
+}
+
 /**
  * Example of host-level configuration. Copy this object into another project
  * and keep only the options that are useful for that integration.
@@ -144,6 +177,8 @@ const demoOptions: GanttOptions = {
     ],
   },
   nonWorkingDays: [0, 6], // Sunday and Saturday
+  // Optional reference date for the project summary. Omit it to use the current day.
+  summaryReferenceDate: '2026-01-20',
   // Drag from an empty timeline cell to browse the plan without using its scrollbars.
   pan: { enabled: true, axis: 'both', trigger: 'empty-area' },
   history: {
@@ -211,6 +246,14 @@ const demoOptions: GanttOptions = {
     { key: 'start', label: 'Start', width: 104, type: 'date' },
     { key: 'end', label: 'Finish', width: 104, type: 'date' },
     { key: 'costTotal', label: 'Total cost', width: 96, type: 'number' },
+    // Read-only built-in value: the task editor updates task.actualCost.
+    {
+      key: 'actualCost',
+      label: 'Actual cost',
+      width: 108,
+      type: 'number',
+      format: value => value === '' ? '—' : `${new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 }).format(Number(value) || 0)} €`,
+    },
     {
       key: 'costWithCoefficient',
       label: 'Cost × coefficient',
@@ -218,6 +261,15 @@ const demoOptions: GanttOptions = {
       type: 'number',
       value: taskCostWithCoefficient,
       format: value => `${new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 }).format(Number(value) || 0)} €`,
+    },
+    {
+      key: 'costDelta',
+      label: 'Delta',
+      width: 120,
+      type: 'number',
+      value: costDelta,
+      format: formatSignedCost,
+      tone: value => Number(value) < 0 ? 'positive' : 'negative',
     },
   ],
   resourceColumns: [
@@ -393,6 +445,11 @@ function configureDemo(): void {
   gantt.addEventListener('tasks-changed', event => {
     console.info('Gantt change:', (event as CustomEvent).detail);
   });
+  // An external footer can subscribe without reading the full task tree itself.
+  gantt.addEventListener('gantt-summary-changed', event => {
+    updateProjectFooter((event as CustomEvent<GanttProjectSummary>).detail);
+  });
+  updateProjectFooter(gantt.getProjectSummary());
 }
 
 function applyCalendarOptions(): void {

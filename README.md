@@ -92,6 +92,7 @@ gantt.addEventListener('tasks-changed', (event) => {
 | Event | Detail | When to use it |
 | --- | --- | --- |
 | `tasks-changed` | `GanttChange` | Synchronise project changes with application state or an API. |
+| `gantt-summary-changed` | `GanttProjectSummary` | Update a host-owned footer or project status area. |
 | `task-selected` | `{ id, task }` | Update a host-side details panel. |
 | `persistence-error` | `{ error, change }` | Show a retry/error state after an automatic save fails. |
 | `project-file-error` | `{ error }` | Report an MPP import/export adapter error. |
@@ -103,6 +104,46 @@ gantt.options = {
   onTasksChange: (data) => projectStore.set(data),
   onTaskSelect: (taskId, task) => detailsPanel.select(taskId, task),
 };
+```
+
+### Subscribe to project summary information
+
+`gantt-summary-changed` is emitted whenever the planning data changes, including imports, undo/redo, resource changes and host calls to `setData()`. Its detail contains dates, inclusive calendar and working durations, task/phase/milestone counts, duration-weighted progress, schedule alerts, costs, and resource load/capacity. Parent phase totals are not counted twice; resources are unique by external `resourceId` when supplied, otherwise by their assignment id.
+
+```ts
+import type { GanttProjectSummary } from 'gantt-lit-component';
+
+const updateFooter = (summary: GanttProjectSummary) => {
+  startElement.textContent = summary.start ?? '—';
+  endElement.textContent = summary.end ?? '—';
+  durationElement.textContent = `${summary.durationDays} days`;
+  progressElement.textContent = `${summary.progress}%`;
+  overdueElement.textContent = String(summary.overdueTaskCount);
+  costElement.textContent = `${summary.totalCost.toLocaleString()} €`;
+  actualElement.textContent = `${summary.actualCost.toLocaleString()} €`;
+  resourceElement.textContent = String(summary.resourceCount);
+};
+
+gantt.addEventListener('gantt-summary-changed', event => {
+  updateFooter((event as CustomEvent<GanttProjectSummary>).detail);
+});
+
+// Populate a host footer immediately, before the next project edit.
+updateFooter(gantt.getProjectSummary());
+```
+
+`workingDurationDays` uses `nonWorkingDays`. Set `summaryReferenceDate` to calculate schedule alerts against a business date instead of the current day. The optional `plannedCost` and `actualCost` fields on a `GanttTask` feed `plannedCost`, `actualCost`, and `costVariance`; when `plannedCost` is absent, the calculated assignment/task cost is used as the planned value.
+
+```ts
+gantt.setOptions({
+  summaryReferenceDate: '2026-01-20',
+  nonWorkingDays: [0, 6],
+});
+
+gantt.updateTask('task-42', {
+  plannedCost: 12_500,
+  actualCost: 11_400,
+});
 ```
 
 Use the event when the change reason and revision matter; use `onTasksChange` for a lightweight full-data callback.
@@ -201,7 +242,7 @@ const resourceProvider: GanttResourceProvider = {
 gantt.resourceProvider = resourceProvider;
 ```
 
-In the built-in task editor, **Add resource** opens a resource-picker modal; its search calls `resourceProvider.search(query)`. When a user adds a result, the component creates an assignment with a fresh `resource.id` and persists the external, stable unique identifier in `resource.resourceId`. The legacy `resource.metadata.catalogId` is also retained for backward compatibility. Keep any additional business fields in `metadata`.
+In the built-in task editor, the **General** tab exposes the task colour, progress and **actual cost** for every item type (task, phase and milestone). The entered amount is persisted in `task.actualCost`, included in `gantt-summary-changed`, and participates in undo/redo. **Add resource** opens a resource-picker modal; its search calls `resourceProvider.search(query)`. When a user adds a result, the component creates an assignment with a fresh `resource.id` and persists the external, stable unique identifier in `resource.resourceId`. The legacy `resource.metadata.catalogId` is also retained for backward compatibility. Keep any additional business fields in `metadata`.
 
 To keep the dialog entirely in your host application, provide `resourcePicker`. It can open any modal or drawer and calls `assignReference` after the user selects an API resource:
 
@@ -507,6 +548,8 @@ Both grids accept extra columns. A task column receives the full `GanttTask`; a 
 gantt.options = {
   taskColumns: [
     { key: 'name', label: 'Task', width: 260, required: true },
+    // Built-in, read-only unless editable is explicitly set to true.
+    { key: 'actualCost', label: 'Actual cost', width: 110, type: 'number' },
     {
       key: 'weightedCost',
       label: 'Cost × coefficient',
@@ -542,6 +585,8 @@ gantt.options = {
 ```
 
 For a custom resource column, omit `setValue` to make it read-only. With `editable: true` and no `setValue`, the component stores the typed value in `resource.metadata[column.key]`.
+
+For task-grid indicators, `GanttColumn.tone` can return `positive`, `negative` or `neutral`. The component applies its theme-aware semantic colour; keep the signed value in `format` as well so the meaning does not depend on colour alone. The demo's `Delta` column uses `actualCost - costWithCoefficient` with this option.
 
 ## Calendar, localisation and theme overrides
 
