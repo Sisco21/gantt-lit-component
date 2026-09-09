@@ -1,7 +1,8 @@
 import { html, nothing } from 'lit';
 import '../src/gantt-chart';
 import type { GanttChart } from '../src/gantt-chart';
-import type { GanttData, GanttOptions, GanttProjectSummary, GanttResource, GanttResourceProvider, GanttResourceReference, GanttTask } from '../src/types';
+import { GanttColumnType } from '../src/types';
+import type { GanttColumnRenderContext, GanttData, GanttOptions, GanttProjectSummary, GanttResource, GanttResourceProvider, GanttResourceReference, GanttTask } from '../src/types';
 import sampleData from './data.json' with { type: 'json' };
 
 // JSON module imports widen literal values (for example, `type`) to `string`.
@@ -148,6 +149,16 @@ function formatSignedCost(value: unknown): string {
   return `${sign}${new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 }).format(Math.abs(amount))} €`;
 }
 
+function deltaCellStyle({ value }: GanttColumnRenderContext): string {
+  const isSaving = Number(value) < 0;
+  const color = isSaving ? 'var(--gantt-green)' : 'var(--gantt-red)';
+  return `color:${color}; background:color-mix(in srgb, ${color} 14%, transparent); font-weight:700; transition:color 140ms ease, background-color 140ms ease`;
+}
+
+function deltaCellTemplate({ formattedValue }: GanttColumnRenderContext) {
+  return html`<span style="display:inline-flex; align-items:center; justify-content:flex-end; min-width:0; white-space:nowrap">${formattedValue}</span>`;
+}
+
 /**
  * Example of host-level configuration. Copy this object into another project
  * and keep only the options that are useful for that integration.
@@ -155,6 +166,8 @@ function formatSignedCost(value: unknown): string {
 const demoOptions: GanttOptions = {
   locale: navigator.language,
   dayWidth: 30, // Keeps compact custom labels such as "V 16" on one line.
+  // The left grid stays draggable but never uses more than half the browser width.
+  taskGridSplitter: { minWidth: 260, maxWidth: '55vw', minTimelineWidth: 200 },
   firstDayOfWeek: 1, // Monday
   showWeekNumbers: true,
   weekNumbering: 'iso', //'first-full-week', // Microsoft Project-like convention
@@ -242,23 +255,23 @@ const demoOptions: GanttOptions = {
   taskColumns: [
     { key: 'code', label: 'Code1', width: 64 },
     { key: 'name', label: 'Task name', width: 230, required: true },
-    { key: 'duration', label: 'Duration', width: 78, type: 'number' },
-    { key: 'start', label: 'Start', width: 104, type: 'date' },
-    { key: 'end', label: 'Finish', width: 104, type: 'date' },
-    { key: 'costTotal', label: 'Total cost', width: 96, type: 'number' },
+    { key: 'duration', label: 'Duration', width: 78, type: GanttColumnType.Integer },
+    { key: 'start', label: 'Start', width: 104, type: GanttColumnType.Date },
+    { key: 'end', label: 'Finish', width: 104, type: GanttColumnType.Date },
+    { key: 'costTotal', label: 'Total cost', width: 96, type: GanttColumnType.Decimal },
     // Read-only built-in value: the task editor updates task.actualCost.
     {
       key: 'actualCost',
       label: 'Actual cost',
       width: 108,
-      type: 'number',
+      type: GanttColumnType.Decimal,
       format: value => value === '' ? '—' : `${new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 }).format(Number(value) || 0)} €`,
     },
     {
       key: 'costWithCoefficient',
       label: 'Cost × coefficient',
       width: 138,
-      type: 'number',
+      type: GanttColumnType.Decimal,
       value: taskCostWithCoefficient,
       format: value => `${new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 }).format(Number(value) || 0)} €`,
     },
@@ -266,25 +279,29 @@ const demoOptions: GanttOptions = {
       key: 'costDelta',
       label: 'Delta',
       width: 120,
-      type: 'number',
+      type: GanttColumnType.Decimal,
       value: costDelta,
       format: formatSignedCost,
       tone: value => Number(value) < 0 ? 'positive' : 'negative',
+      cellTemplate: deltaCellTemplate,
+      cellStyle: deltaCellStyle,
     },
   ],
   resourceColumns: [
     { key: 'name', label: 'Name', width: 150, editable: true },
     { key: 'type', label: 'Type', width: 105, editable: true },
     { key: 'calendarId', label: 'Calendar', width: 145, editable: true },
-    { key: 'maxUnits', label: 'Capacity', width: 80, type: 'number', editable: true },
-    { key: 'unitCost', label: 'PU', width: 75, type: 'number', editable: true },
-    { key: 'quantity', label: 'Q', width: 65, type: 'number', editable: true },
-    { key: 'totalQuantity', label: 'Total quantity', width: 90, type: 'number', editable: true },
+    { key: 'maxUnits', label: 'Capacity', width: 80, type: GanttColumnType.Integer, editable: true },
+    { key: 'unitCost', label: 'PU', width: 75, type: GanttColumnType.Decimal, editable: true },
+    { key: 'quantity', label: 'Q', width: 65, type: GanttColumnType.Integer, editable: true },
+    { key: 'totalQuantity', label: 'Total quantity', width: 90, type: GanttColumnType.Integer, editable: true },
     {
       key: 'coefficient',
       label: 'Coefficient',
       width: 84,
-      type: 'number',
+      type: GanttColumnType.Decimal,
+      min: -100,
+      step: 0.1,
       editable: true,
       value: resource => Number(resource.metadata?.coefficient ?? 1),
       setValue: (value, resource) => ({ metadata: { ...resource.metadata, coefficient: Number(value) || 1 } }),
@@ -293,7 +310,7 @@ const demoOptions: GanttOptions = {
       key: 'costWithCoefficient',
       label: 'Cost × coefficient',
       width: 138,
-      type: 'number',
+      type: GanttColumnType.Decimal,
       value: resourceCostWithCoefficient,
       format: value => `${new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 }).format(Number(value) || 0)} €`,
     },

@@ -586,11 +586,79 @@ gantt.options = {
 
 For a custom resource column, omit `setValue` to make it read-only. With `editable: true` and no `setValue`, the component stores the typed value in `resource.metadata[column.key]`.
 
+### Numeric resource inputs
+
+Editable resource columns use the `GanttColumnType` enum. `string` (or the legacy `text`), `integer`, `decimal`, and `number` remain accepted as strings for compatibility. Use `step` and `min` when the default input rule does not match the business value.
+
+```ts
+import { GanttColumnType } from 'gantt-lit-component';
+
+resourceColumns: [
+  { key: 'name', label: 'Name', width: 180, type: GanttColumnType.String, editable: true },
+  { key: 'quantity', label: 'Quantity', width: 80, type: GanttColumnType.Integer, min: 0, step: 1, editable: true },
+  { key: 'coefficient', label: 'Coefficient', width: 96, type: GanttColumnType.Decimal, min: 0.01, step: 0.05, editable: true },
+  { key: 'unitCost', label: 'Unit cost', width: 92, type: GanttColumnType.Decimal, min: 0, step: 0.01, editable: true },
+]
+```
+
+`integer` defaults to a step of `1`; `decimal` defaults to `any`. `step` accepts a number or `any`. The legacy `number` type keeps its existing defaults for compatibility.
+
 For task-grid indicators, `GanttColumn.tone` can return `positive`, `negative` or `neutral`. The component applies its theme-aware semantic colour; keep the signed value in `format` as well so the meaning does not depend on colour alone. The demo's `Delta` column uses `actualCost - costWithCoefficient` with this option.
+
+### Custom cell templates and CSS effects
+
+Use `cellTemplate` to render Lit content and `cellStyle` to compute inline CSS from the full task and cell value. This is useful for icons, badges, emphasis, colour, shadows, borders or transitions, while keeping the column read-only.
+
+```ts
+import { html } from 'lit';
+import type { GanttColumnRenderContext } from 'gantt-lit-component';
+
+const deltaStyle = ({ value }: GanttColumnRenderContext) => {
+  const saving = Number(value) < 0;
+  const color = saving ? 'var(--gantt-green)' : 'var(--gantt-red)';
+  return `color:${color}; background:color-mix(in srgb, ${color} 14%, transparent); font-weight:700; transition:color 140ms ease`;
+};
+
+const deltaTemplate = ({ formattedValue }: GanttColumnRenderContext) => html`
+  <span style="display:inline-flex; align-items:center; white-space:nowrap">${formattedValue}</span>
+`;
+
+gantt.setOptions({
+  taskColumns: [{
+    key: 'delta',
+    label: 'Delta',
+    width: 120,
+    type: 'number',
+    value: task => Number(task.actualCost || 0) - calculateCostWithCoefficient(task),
+    format: value => formatSignedCost(value),
+    tone: value => Number(value) < 0 ? 'positive' : 'negative',
+    cellTemplate: deltaTemplate,
+    cellStyle: deltaStyle,
+  }],
+});
+```
+
+## Resize the task grid and timeline
+
+The divider between the left task grid and the right timeline is draggable by default. `headerWidth` still sets the initial left-grid width; `taskGridSplitter` defines the interactive bounds. The same split is applied to the resource panel, so dates remain aligned.
+
+```ts
+gantt.options = {
+  headerWidth: 420, // optional initial width of the left grid
+  taskGridSplitter: {
+    enabled: true,             // default: true; false removes the draggable separator
+    minWidth: 260,             // default: 220px
+    maxWidth: '50vw',          // optional; omitted = all available space
+    minTimelineWidth: 200,     // default: 160px, always retained on the right
+  },
+};
+```
+
+`minWidth`, `maxWidth` and `minTimelineWidth` accept a number (pixels) or a string in `px`, `vw` or `%`. For example, use `maxWidth: '50vw'` for half the browser viewport, `maxWidth: '60%'` for 60% of the component width, or `maxWidth: '900px'` for a fixed limit. Responsive values are recalculated when the component changes size.
 
 ## Calendar, localisation and theme overrides
 
-By default, the component uses the browser locale (`navigator.language`), starts weeks on Monday, and shades Saturday and Sunday. Built-in French and English dictionaries live in [`src/translations.ts`](src/translations.ts); other locales use English as a safe fallback. Override any label through `translations` when your product needs another language or specific terminology.
+By default, the component uses the browser locale (`navigator.language`), starts weeks on Monday, and shades Saturday and Sunday. Built-in French and English dictionaries live in [`src/translations.ts`](src/translations.ts); other locales use English as a safe fallback. All built-in visible labels, accessibility names, tooltips, validation/status messages and default menus use this dictionary. Override any label through `translations` when your product needs another language or specific terminology.
 
 ```ts
 gantt.options = {
@@ -602,9 +670,14 @@ gantt.options = {
   translations: {
     resources: 'People and equipment',
     noPlanningData: 'Nothing has been planned yet.',
+    focusTask: 'Centre task in timeline',
+    resizeTaskGrid: 'Resize task grid',
+    projectImported: 'Project imported: {file}',
   },
 };
 ```
+
+Translation values with placeholders support `{file}`, `{extension}`, `{column}` and `{name}`. Keep those placeholders in the translated sentence; their order can be changed to suit the language.
 
 ### Configurable date headers
 

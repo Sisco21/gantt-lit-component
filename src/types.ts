@@ -151,12 +151,33 @@ export interface TaskColors {
   rowAltBackground?: string;
 }
 
+/** Value type used by task-grid and resource-grid columns. */
+export enum GanttColumnType {
+  Text = 'text',
+  String = 'string',
+  Number = 'number',
+  Integer = 'integer',
+  Decimal = 'decimal',
+  Date = 'date',
+}
+
+/** String literals remain accepted for compatibility with existing column configurations. */
+export type GanttColumnTypeValue = GanttColumnType | 'text' | 'string' | 'number' | 'integer' | 'decimal' | 'date';
+
+/** Context supplied when rendering or styling a custom task-grid cell. */
+export interface GanttColumnRenderContext {
+  task: GanttTask;
+  value: unknown;
+  formattedValue: string;
+}
+
 export interface GanttColumn {
   /** Built-in keys include mode, code, name, duration, start and end. */
   key: string;
   label: string;
   width: number;
-  type?: 'text' | 'number' | 'date';
+  /** `string` is an alias of `text`; `integer` and `decimal` are numeric display types. */
+  type?: GanttColumnTypeValue;
   editable?: boolean;
   /** A required column stays visible in the column picker. */
   required?: boolean;
@@ -168,6 +189,10 @@ export interface GanttColumn {
   format?: (value: unknown, task: GanttTask) => string;
   /** Applies the component's semantic positive, negative or neutral column tone. */
   tone?: (value: unknown, task: GanttTask) => 'positive' | 'negative' | 'neutral' | undefined;
+  /** Renders custom Lit or DOM content inside a read-only task-grid cell. */
+  cellTemplate?: (context: GanttColumnRenderContext) => unknown;
+  /** Adds inline CSS to a task-grid cell. Useful for value-dependent visual effects. */
+  cellStyle?: (context: GanttColumnRenderContext) => string | undefined;
 }
 
 /** Configures a left-side column of the resource assignment grid. */
@@ -175,7 +200,12 @@ export interface GanttResourceColumn {
   key: string;
   label: string;
   width: number;
-  type?: 'text' | 'number';
+  /** `string` is an alias of `text`; `integer` and `decimal` control numeric input defaults. */
+  type?: GanttColumnTypeValue;
+  /** Minimum accepted numeric value. Omit it to leave the input unconstrained. */
+  min?: number;
+  /** Numeric input increment. Use `any` for arbitrary decimal values. */
+  step?: number | 'any';
   editable?: boolean;
   /** Computes a display value with access to both the assignment and its task. */
   value?: (resource: GanttResource, task: GanttTask) => unknown;
@@ -340,6 +370,38 @@ export interface GanttTranslations {
   totalCost: string;
   automatic: string;
   manual: string;
+  invalidJson: string;
+  ganttHorizontalScroll: string;
+  resizeColumn: string;
+  resizeTaskGrid: string;
+  resizeResourceGrid: string;
+  toggleTask: string;
+  focusTask: string;
+  nonWorkingDay: string;
+  resourceCalendarFor: string;
+  resizeStart: string;
+  resizeEnd: string;
+  projectImported: string;
+  projectLoadedFromPersistence: string;
+  projectSaved: string;
+  projectSavedLocal: string;
+  projectLoadedLocal: string;
+  saveFailed: string;
+  importFailed: string;
+  exportComplete: string;
+  exportFailed: string;
+  saveLocalFailed: string;
+  noLocalProject: string;
+  loadLocalFailed: string;
+  resourcePickerUnavailable: string;
+  resourceCatalogueUnavailable: string;
+  resourceAlreadyAssigned: string;
+  resourceProviderLater: string;
+  weekNumber: string;
+  finishToStart: string;
+  startToStart: string;
+  finishToFinish: string;
+  startToFinish: string;
 }
 
 /** Drag-to-pan behaviour for the empty part of the Gantt timeline. */
@@ -442,8 +504,22 @@ export interface GanttResourceHeaderOptions {
   zoomLevels?: GanttResourceHeaderZoomLevel[];
 }
 
+/** Controls the draggable split between the task grid and the timeline. */
+export interface GanttTaskGridSplitterOptions {
+  /** Enables the draggable separator. Defaults to true. */
+  enabled?: boolean;
+  /** Minimum width of the left task grid. Accepts pixels, `vw` or `%`. Defaults to 220px. */
+  minWidth?: number | string;
+  /** Maximum width of the left task grid. Accepts pixels, `vw` or `%`; omitted means available width. */
+  maxWidth?: number | string;
+  /** Space preserved for the right timeline. Accepts pixels, `vw` or `%`. Defaults to 160px. */
+  minTimelineWidth?: number | string;
+}
+
 export interface GanttOptions {
   headerWidth?: number;
+  /** Configures the resizable split between the task grid and the right-side timeline. */
+  taskGridSplitter?: GanttTaskGridSplitterOptions;
   /** Optional internal scroll height. Omit to let the component grow naturally. */
   maxHeight?: number | string;
   /** Maximum height of the resource grid before its own vertical scroll appears. */

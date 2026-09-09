@@ -2,6 +2,7 @@ import '@fontsource/roboto/latin-400.css';
 import '@fontsource/roboto/latin-500.css';
 import '@fontsource/roboto/latin-700.css';
 import { LitElement, css, html, nothing } from 'lit';
+import { ifDefined } from 'lit/directives/if-defined.js';
 import {
   GanttChange,
   GanttChangeReason,
@@ -125,7 +126,6 @@ export class GanttChart extends LitElement {
     }
 
     :host([theme="dark"]) {
-      color-scheme: dark;
       color: #e5edf8;
       --gantt-header: #1d293b;
       --gantt-border: #394a63;
@@ -240,14 +240,14 @@ export class GanttChart extends LitElement {
     .split-viewport { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
     /* Le Gantt possède son défilement vertical. Les deux panneaux ci-dessous
        conservent chacun leur propre défilement horizontal. */
-    .gantt-viewport { flex: 0 0 var(--gantt-panel-height, 440px); height: var(--gantt-panel-height, 440px); min-height: 260px; overflow-x: hidden; overflow-y: auto; position: relative; overscroll-behavior: contain; scrollbar-gutter: stable; }
+    .gantt-viewport { flex: 0 0 var(--gantt-panel-height, 440px); height: var(--gantt-panel-height, 440px); min-height: 260px; overflow-x: hidden; overflow-y: auto; position: relative; overscroll-behavior: contain; }
     /* La partie Ressources absorbe tout l'espace restant sous le Gantt. */
     .resources-viewport { flex: 1 1 0; height: auto; min-height: 180px; overflow: hidden; position: relative; overscroll-behavior: contain; }
 
     .gantt-layout {
       position: relative;
       display: grid;
-      grid-template-columns: var(--header-width) minmax(160px, 1fr);
+      grid-template-columns: var(--header-width) minmax(var(--min-timeline-width, 160px), 1fr);
       grid-template-rows: var(--timeline-header-height, ${HEADER_HEIGHT}px) auto;
       width: 100%;
       min-width: 0;
@@ -256,10 +256,10 @@ export class GanttChart extends LitElement {
       align-items: start;
     }
 
-    .task-pane { grid-column: 1; grid-row: 2; min-width: 0; overflow-x: auto; overflow-y: clip; scrollbar-gutter: stable; scrollbar-width: none; }
+    .task-pane { grid-column: 1; grid-row: 2; min-width: 0; overflow-x: auto; overflow-y: clip; scrollbar-width: none; }
     .task-content { position: relative; width: 100%; min-width: var(--task-columns-width); }
     .timeline-pane { grid-column: 2; grid-row: 2; min-width: 0; position: relative; overflow: hidden; }
-    .timeline-scroll { width: 100%; overflow-x: auto; overflow-y: clip; scrollbar-gutter: stable; scrollbar-width: none; }
+    .timeline-scroll { width: 100%; overflow-x: auto; overflow-y: clip; scrollbar-width: none; }
     .timeline-scroll.pan-enabled { cursor: grab; touch-action: none; }
     .timeline-scroll.panning { cursor: grabbing; user-select: none; }
     .timeline-content { position: relative; min-height: 100%; min-width: 100%; }
@@ -270,14 +270,14 @@ export class GanttChart extends LitElement {
       top: calc(var(--gantt-panel-height) - 18px);
       z-index: 40;
       display: grid;
-      grid-template-columns: var(--header-width) minmax(160px, 1fr);
+      grid-template-columns: var(--header-width) minmax(var(--min-timeline-width, 160px), 1fr);
       width: 100%;
       height: 18px;
       margin-bottom: -18px;
       background: var(--gantt-header);
       border-top: 1px solid var(--gantt-border);
     }
-    .gantt-horizontal-scroll { min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-gutter: stable; }
+    .gantt-horizontal-scroll { min-width: 0; overflow-x: auto; overflow-y: hidden; }
     .gantt-horizontal-scroll + .gantt-horizontal-scroll { border-left: 1px solid var(--gantt-border); }
     .gantt-scroll-spacer { height: 1px; width: 100%; min-width: var(--task-columns-width); }
     .gantt-scroll-spacer.timeline { min-width: var(--timeline-width); }
@@ -425,7 +425,7 @@ export class GanttChart extends LitElement {
     .column-resizer:hover, .column-resizer:focus-visible { background: rgb(52 120 212 / 18%); outline: 0; }
     .empty { position: relative; z-index: 6; min-height: 100%; padding: 40px; background: var(--gantt-empty-background); color: var(--gantt-empty-color); text-align: center; }
 
-    .resources-panel { display: grid; grid-template-columns: var(--header-width) minmax(160px, 1fr); grid-template-rows: auto minmax(0, 1fr) 18px; width: 100%; min-width: 0; height: 100%; border-top: 2px solid var(--gantt-border); background: var(--gantt-surface); }
+    .resources-panel { display: grid; grid-template-columns: var(--header-width) minmax(var(--min-timeline-width, 160px), 1fr); grid-template-rows: auto minmax(0, 1fr) 18px; width: 100%; min-width: 0; height: 100%; border-top: 2px solid var(--gantt-border); background: var(--gantt-surface); }
     .resources-title { grid-column: 1 / -1; padding: 9px 12px; border-bottom: 1px solid var(--gantt-border); color: inherit; font-size: 12px; font-weight: 700; }
     .resource-resizer { flex: 0 0 8px; width: 100%; min-width: 280px; height: 8px; border-top: 1px solid var(--gantt-control-border); border-bottom: 1px solid var(--gantt-border); background: var(--gantt-header); cursor: row-resize; touch-action: none; }
     .resource-resizer:hover, .resource-resizer:focus-visible { background: #dbeafe; outline: 0; }
@@ -467,8 +467,8 @@ export class GanttChart extends LitElement {
     .editor-resource-row button, .editor-link-row button, .reference-result button { margin-left: auto; }
     .link-add { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 8px; }
     .editor-empty { padding: 14px; color: var(--gantt-muted); font-size: 12px; text-align: center; }
-    .resources-scroll { grid-column: 1 / -1; grid-row: 2; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; position: relative; scrollbar-gutter: stable; }
-    .resources-body { display: grid; grid-template-columns: var(--header-width) minmax(160px, 1fr); grid-template-rows: var(--resource-header-height, 32px) minmax(0, 1fr); width: 100%; min-width: 0; min-height: 100%; }
+    .resources-scroll { grid-column: 1 / -1; grid-row: 2; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; position: relative; }
+    .resources-body { display: grid; grid-template-columns: var(--header-width) minmax(var(--min-timeline-width, 160px), 1fr); grid-template-rows: var(--resource-header-height, 32px) minmax(0, 1fr); width: 100%; min-width: 0; min-height: 100%; }
     .resource-left-header { grid-column: 1; grid-row: 1; position: sticky; top: 0; z-index: 4; overflow: hidden; border-right: 1px solid var(--gantt-border); background: var(--gantt-header); }
     .resources-left { grid-column: 1; grid-row: 2; min-width: 0; min-height: 0; overflow-x: auto; overflow-y: clip; border-right: 1px solid var(--gantt-border); scrollbar-width: none; }
     .resources-grid { display: grid; grid-template-columns: var(--resource-columns-template); min-width: var(--resource-columns-width); }
@@ -498,8 +498,8 @@ export class GanttChart extends LitElement {
     .resource-cell { box-sizing: border-box; height: 32px; min-height: 32px; padding: 4px 8px; border-right: 1px solid var(--gantt-grid-line); border-bottom: 1px solid var(--gantt-grid-line); font-size: 11px; }
     .resource-cell.header { background: var(--gantt-header); color: var(--gantt-muted); font-size: 10px; font-weight: 700; }
     .resource-cell.resource-action { display: flex; align-items: center; justify-content: center; padding-inline: 4px; }
-    .resources-scrollbar-dock { grid-column: 1 / -1; grid-row: 3; display: grid; grid-template-columns: var(--header-width) minmax(160px, 1fr); min-width: 0; height: 18px; border-top: 1px solid var(--gantt-border); background: var(--gantt-header); }
-    .resource-horizontal-scroll { min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-gutter: stable; }
+    .resources-scrollbar-dock { grid-column: 1 / -1; grid-row: 3; display: grid; grid-template-columns: var(--header-width) minmax(var(--min-timeline-width, 160px), 1fr); min-width: 0; height: 18px; border-top: 1px solid var(--gantt-border); background: var(--gantt-header); }
+    .resource-horizontal-scroll { min-width: 0; overflow-x: auto; overflow-y: hidden; }
     .resource-horizontal-scroll + .resource-horizontal-scroll { border-left: 1px solid var(--gantt-border); }
     .resource-scroll-spacer { height: 1px; width: 100%; min-width: var(--resource-columns-width); }
     .resource-scroll-spacer.timeline { min-width: var(--timeline-width); }
@@ -607,6 +607,7 @@ export class GanttChart extends LitElement {
   private timelineSynchronizationFrame?: number;
   private pendingTimelineSynchronization?: { scrollLeft: number; source?: HTMLElement };
   private ganttViewportResizeObserver?: ResizeObserver;
+  private resourceTimelineResizeObserver?: ResizeObserver;
   private barDrag?: {
     taskId: string;
     mode: 'move' | 'resize-start' | 'resize-end';
@@ -641,15 +642,23 @@ export class GanttChart extends LitElement {
     if (this.ganttViewportFrame !== undefined) window.cancelAnimationFrame(this.ganttViewportFrame);
     if (this.timelineSynchronizationFrame !== undefined) window.cancelAnimationFrame(this.timelineSynchronizationFrame);
     this.ganttViewportResizeObserver?.disconnect();
+    this.resourceTimelineResizeObserver?.disconnect();
     super.disconnectedCallback();
   }
 
   firstUpdated(): void {
     const viewport = this.renderRoot.querySelector<HTMLElement>('.gantt-viewport');
-    if (!viewport) return;
-    this.ganttViewportResizeObserver = new ResizeObserver(() => this.updateGanttViewport());
-    this.ganttViewportResizeObserver.observe(viewport);
-    this.updateGanttViewport(viewport.scrollTop, viewport.clientHeight);
+    if (viewport) {
+      this.ganttViewportResizeObserver = new ResizeObserver(() => this.updateGanttViewport());
+      this.ganttViewportResizeObserver.observe(viewport);
+    }
+    const resourceTimeline = this.renderRoot.querySelector<HTMLElement>('.resource-timeline');
+    if (resourceTimeline) {
+      this.resourceTimelineResizeObserver = new ResizeObserver(() => {
+        this.updateResourceTimelineViewport(resourceTimeline.scrollLeft, resourceTimeline.clientWidth);
+      });
+      this.resourceTimelineResizeObserver.observe(resourceTimeline);
+    }
   }
 
   updated(changed: Map<string, unknown>): void {
@@ -657,12 +666,10 @@ export class GanttChart extends LitElement {
       try {
         this.applyData(parseJson(this.data), 'set-data', false);
       } catch (error) {
-        this.setStatus(error instanceof Error ? error.message : 'Données JSON invalides', 'error');
+        this.setStatus(error instanceof Error ? error.message : this.t('invalidJson'), 'error');
       }
     }
     if (changed.has('taskColors')) this.applyColors();
-    const resourceTimeline = this.renderRoot.querySelector<HTMLElement>('.resource-timeline');
-    if (resourceTimeline) this.updateResourceTimelineViewport(resourceTimeline.scrollLeft, resourceTimeline.clientWidth);
   }
 
   render() {
@@ -676,6 +683,7 @@ export class GanttChart extends LitElement {
     const dayWidth = this.getDayWidth();
     const timelineWidth = totalDays * dayWidth;
     const taskColumnsWidth = this.getColumns().reduce((width, column) => width + this.getColumnWidth(column), 0);
+    const taskGridSizing = this.getTaskGridSizing();
     const colors = this.getColors();
     const dependencyColor = this.options.dependencyColor || colors.dependency || 'var(--gantt-dependency)';
     const searchResultIds = this.getSearchResultIds();
@@ -683,7 +691,7 @@ export class GanttChart extends LitElement {
     const currentSearchId = searchResultIds[this.searchResultIndex];
 
     return html`
-      <div class="shell" @click=${this.closeOpenContextMenus} @contextmenu=${this.preventNativeContextMenu} style="--header-width:${this.getHeaderWidth()}px; --task-columns-width:${taskColumnsWidth}px; --timeline-width:${timelineWidth}px; --day-width:${dayWidth}px; --rows-height:${Math.max(1, visibleTasks.length) * ROW_HEIGHT}px; --timeline-header-height:${this.getTimelineHeaderHeight()}px; --dependency-color:${dependencyColor}; --dependency-line-style:${this.options.dependencyLineStyle || 'solid'}; --gantt-panel-height:${this.getGanttPanelHeight()}; --resources-panel-height:${this.getResourcesPanelHeight()}">
+      <div class="shell" @click=${this.closeOpenContextMenus} @contextmenu=${this.preventNativeContextMenu} style="--header-width:${this.getHeaderWidth(taskGridSizing)}px; --min-timeline-width:${taskGridSizing.minTimelineWidth}px; --task-columns-width:${taskColumnsWidth}px; --timeline-width:${timelineWidth}px; --day-width:${dayWidth}px; --rows-height:${Math.max(1, visibleTasks.length) * ROW_HEIGHT}px; --timeline-header-height:${this.getTimelineHeaderHeight()}px; --dependency-color:${dependencyColor}; --dependency-line-style:${this.options.dependencyLineStyle || 'solid'}; --gantt-panel-height:${this.getGanttPanelHeight()}; --resources-panel-height:${this.getResourcesPanelHeight()}">
         <div class="toolbar">
           <button class="primary" @click=${() => this.chooseImport('.json,.xml,.mpp')}>${this.t('import')}</button>
           <button @click=${() => this.download('json')}>${this.t('exportJson')}</button>
@@ -702,7 +710,7 @@ export class GanttChart extends LitElement {
           <button @click=${this.expandAllParents}>${this.t('expandAll')}</button>
           <button @click=${this.collapseAllParents}>${this.t('collapseAll')}</button>
           <span class="column-menu-wrapper">
-            <button @click=${this.toggleColumnMenu} aria-expanded=${this.columnMenuOpen}>${this.t('columns')}</button>
+            <button @click=${this.toggleColumnMenu} aria-expanded=${this.columnMenuOpen ? 'true' : 'false'}>${this.t('columns')}</button>
             ${this.renderColumnMenu()}
           </span>
           <span class="search-control" role="search">
@@ -722,12 +730,12 @@ export class GanttChart extends LitElement {
           </div>
         <div class="split-viewport" @wheel=${this.handleWheel}>
           <div class="gantt-viewport" @scroll=${this.handleGanttViewportScroll}>
-            <div class="gantt-scrollbar-dock" aria-label="Défilement horizontal du Gantt">
+            <div class="gantt-scrollbar-dock" aria-label=${this.t('ganttHorizontalScroll')}>
               <div class="gantt-horizontal-scroll" @scroll=${this.syncTaskGridScroll}><div class="gantt-scroll-spacer"></div></div>
               <div class="gantt-horizontal-scroll" @scroll=${this.syncTimelineGridScroll}><div class="gantt-scroll-spacer timeline"></div></div>
             </div>
             <div class="gantt-layout">
-              <div class="task-header"><div class="task-columns">${this.getColumns().map(column => html`<div class="task-column" style="width:${this.getColumnWidth(column)}px">${column.label}<span class="task-column-resizer" role="separator" tabindex="0" aria-label="Redimensionner ${column.label}" @pointerdown=${(event: PointerEvent) => this.startTaskColumnResize(event, column)}></span></div>`)}</div></div>
+              <div class="task-header"><div class="task-columns">${this.getColumns().map(column => html`<div class="task-column" style="width:${this.getColumnWidth(column)}px">${column.label}<span class="task-column-resizer" role="separator" tabindex="0" aria-label=${this.tFormat('resizeColumn', { column: column.label })} @pointerdown=${(event: PointerEvent) => this.startTaskColumnResize(event, column)}></span></div>`)}</div></div>
               ${this.renderTimelineHeader(range.start, totalDays, dayWidth)}
               <div class="task-pane" @scroll=${this.syncTaskHeaderScroll}>
                 <div class="task-content" style="height:${Math.max(1, visibleTasks.length) * ROW_HEIGHT}px">
@@ -745,10 +753,10 @@ export class GanttChart extends LitElement {
                   </div>
                 </div>
               </div>
-              <div class="column-resizer" role="separator" tabindex="0" aria-label="Redimensionner la grille des tâches" @pointerdown=${this.startColumnResize}></div>
+              ${this.options.taskGridSplitter?.enabled !== false ? html`<div class="column-resizer" role="separator" tabindex="0" aria-label=${this.t('resizeTaskGrid')} @pointerdown=${this.startColumnResize}></div>` : nothing}
             </div>
           </div>
-          ${selectedTask ? html`<div class="resource-resizer" role="separator" tabindex="0" aria-label="Redimensionner la grille des ressources" @pointerdown=${this.startResourceResize}></div>` : nothing}
+          ${selectedTask ? html`<div class="resource-resizer" role="separator" tabindex="0" aria-label=${this.t('resizeResourceGrid')} @pointerdown=${this.startResourceResize}></div>` : nothing}
           ${selectedTask ? html`<div class="resources-viewport">${this.renderResourcePanel(selectedTask, range.start, totalDays, dayWidth)}</div>` : nothing}
         </div>
         ${this.renderResourceContextMenu()}
@@ -906,7 +914,7 @@ export class GanttChart extends LitElement {
   async importFile(file: File): Promise<GanttData> {
     const imported = await importProjectFile(file, this.projectFileAdapter);
     this.applyData(imported, 'imported', true);
-    this.setStatus(`Projet importé : ${file.name}`, 'success');
+    this.setStatus(this.tFormat('projectImported', { file: file.name }), 'success');
     return imported;
   }
 
@@ -919,7 +927,7 @@ export class GanttChart extends LitElement {
     const data = await this.persistenceAdapter.load(this.projectId);
     if (!data) return false;
     this.applyData(data, 'set-data', false);
-    this.setStatus('Projet chargé depuis la persistance', 'success');
+    this.setStatus(this.t('projectLoadedFromPersistence'), 'success');
     return true;
   }
 
@@ -930,13 +938,13 @@ export class GanttChart extends LitElement {
     if (this.saveHook) saves.push(Promise.resolve(this.saveHook(change)));
     if (!saves.length) throw new Error('Aucun persistenceAdapter ou saveHook configuré.');
     await Promise.all(saves);
-    this.setStatus('Projet sauvegardé', 'success');
+    this.setStatus(this.t('projectSaved'), 'success');
   }
 
   saveToLocalStorage(key = this.getLocalStorageKey()): void {
     if (typeof window === 'undefined' || !window.localStorage) throw new Error('localStorage est indisponible dans cet environnement.');
     window.localStorage.setItem(key, this.toJSON());
-    this.setStatus('Projet sauvegardé localement', 'success');
+    this.setStatus(this.t('projectSavedLocal'), 'success');
   }
 
   loadFromLocalStorage(key = this.getLocalStorageKey()): boolean {
@@ -944,7 +952,7 @@ export class GanttChart extends LitElement {
     const raw = window.localStorage.getItem(key);
     if (!raw) return false;
     this.applyData(parseJson(raw), 'set-data', false);
-    this.setStatus('Projet chargé depuis le stockage local', 'success');
+    this.setStatus(this.t('projectLoadedLocal'), 'success');
     return true;
   }
 
@@ -1249,20 +1257,24 @@ export class GanttChart extends LitElement {
   private renderTaskCell(task: GanttTask, column: GanttColumn, depth: number, hasChildren: boolean) {
     const value = this.getColumnValue(task, column);
     const isName = column.key === 'name';
-    const isNumber = column.type === 'number' || ['unitCost', 'quantity', 'quantityPerDay', 'duration', 'costTotal', 'actualCost', 'plannedCost'].includes(column.key);
+    const isNumber = this.isNumericColumn(column) || ['unitCost', 'quantity', 'quantityPerDay', 'duration', 'costTotal', 'actualCost', 'plannedCost'].includes(column.key);
     const isPhase = task.type === 'parent';
     const tone = column.tone?.(value, task);
+    const formattedValue = this.formatColumnValue(value, column, task);
+    const context = { task, value, formattedValue };
+    const customStyle = !isName ? column.cellStyle?.(context)?.trim() : '';
+    const cellStyle = `width:${this.getColumnWidth(column)}px${customStyle ? `;${customStyle}` : ''}`;
     return html`
-      <div class="task-cell ${isName ? 'name' : ''} ${isNumber ? 'number' : ''} ${hasChildren || isPhase ? 'parent' : ''} ${tone ? `tone-${tone}` : ''}" style="width:${this.getColumnWidth(column)}px" title=${value === null || value === undefined ? '' : String(value)}>
+      <div class="task-cell ${isName ? 'name' : ''} ${isNumber ? 'number' : ''} ${hasChildren || isPhase ? 'parent' : ''} ${tone ? `tone-${tone}` : ''}" style=${cellStyle} title=${value === null || value === undefined ? '' : String(value)}>
         ${isName ? html`
-          <button class="toggle" style="left:${2 + depth * 16}px" ?disabled=${!hasChildren} @click=${(event: Event) => { event.stopPropagation(); this.toggleTask(task.id); }} aria-label="Déplier ou replier" aria-expanded=${hasChildren ? String(!task.collapsed) : nothing}>
+          <button class="toggle" style="left:${2 + depth * 16}px" ?disabled=${!hasChildren} @click=${(event: Event) => { event.stopPropagation(); this.toggleTask(task.id); }} aria-label=${this.t('toggleTask')} aria-expanded=${ifDefined(hasChildren ? (task.collapsed ? 'false' : 'true') : undefined)}>
             ${hasChildren ? task.collapsed ? '▶' : '▼' : '·'}
           </button>
           <span class="task-name" style="padding-left:${19 + depth * 16}px">${value}</span>
-          <button class="task-focus" aria-label="Centrer la tâche dans le Gantt" title="Centrer dans le Gantt" @click=${(event: Event) => { event.stopPropagation(); this.focusTaskFromGrid(task.id); }} @dblclick=${(event: Event) => event.stopPropagation()}>
+          <button class="task-focus" aria-label=${this.t('focusTask')} title=${this.t('focusTask')} @click=${(event: Event) => { event.stopPropagation(); this.focusTaskFromGrid(task.id); }} @dblclick=${(event: Event) => event.stopPropagation()}>
             <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4.5"></circle><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3"></path></svg>
           </button>
-        ` : this.formatColumnValue(value, column, task)}
+        ` : column.cellTemplate ? column.cellTemplate(context) : formattedValue}
       </div>
     `;
   }
@@ -1289,7 +1301,7 @@ export class GanttChart extends LitElement {
           <div class="resources-body">
             ${resourceHeader.visible ? html`<div class="resource-left-header">
               <div class="resources-grid">
-                ${resourceColumns.map(column => html`<div class="resource-cell header ${column.type === 'number' ? 'numeric' : ''}" title=${column.label}>${column.label}</div>`)}
+                ${resourceColumns.map(column => html`<div class="resource-cell header ${this.isNumericColumn(column) ? 'numeric' : ''}" title=${column.label}>${column.label}</div>`)}
                 <div class="resource-cell header resource-action"></div>
               </div>
             </div>` : nothing}
@@ -1316,7 +1328,7 @@ export class GanttChart extends LitElement {
             const working = this.isResourceWorkingDay(resource, date);
             const value = resource.quantityByDate?.[dateKey];
             const unavailable = !working;
-            const title = unavailable ? `${this.getResourceCalendarLabel(resource)} — jour non travaillé` : this.formatDayTitle(date);
+            const title = unavailable ? `${this.getResourceCalendarLabel(resource)} — ${this.t('nonWorkingDay')}` : this.formatDayTitle(date);
             return html`<input class="resource-day-input ${unavailable ? 'calendar-closed' : ''}" type="number" min="0" step="1" ?disabled=${!active || unavailable} value=${value === undefined ? '' : value} title=${title} aria-label="${resource.name} ${dateKey}" @change=${(event: Event) => this.updateResourceQuantity(task.id, resource.id, dateKey, (event.target as HTMLInputElement).value)} />`;
           })}</div></div>`)}
               </div>
@@ -1333,18 +1345,18 @@ export class GanttChart extends LitElement {
 
   private renderResourceCell(task: GanttTask, resource: GanttResource, column: GanttResourceColumn) {
     const value = this.getResourceColumnValue(task, resource, column);
-    const numeric = column.type === 'number';
+    const numeric = this.isNumericColumn(column);
     if (column.key === 'totalQuantity') {
-      return html`<div class="resource-cell total"><input type="number" min="0" step="1" value=${value ?? 0} title=${this.t('totalQuantity')} aria-label="${this.t('totalQuantity')} ${resource.name}" @change=${(event: Event) => this.distributeResourceTotal(task.id, resource.id, (event.target as HTMLInputElement).value)} /></div>`;
+      return html`<div class="resource-cell total"><input type="number" min=${ifDefined(this.getResourceColumnMin(column))} .step=${this.getResourceColumnStepProperty(column)} value=${value ?? 0} title=${this.t('totalQuantity')} aria-label="${this.t('totalQuantity')} ${resource.name}" @change=${(event: Event) => this.distributeResourceTotal(task.id, resource.id, (event.target as HTMLInputElement).value)} /></div>`;
     }
     if (column.key === 'calendarId' && column.editable) {
-      return html`<div class="resource-cell"><select .value=${resource.calendarId || ''} aria-label="Calendrier ${resource.name}" @change=${(event: Event) => this.updateResource(task.id, resource.id, 'calendarId', (event.target as HTMLSelectElement).value || undefined)}><option value="">${this.t('resource')}</option>${this.calendars.map(calendar => html`<option value=${calendar.id}>${calendar.name}</option>`)}</select></div>`;
+      return html`<div class="resource-cell"><select .value=${resource.calendarId || ''} aria-label=${this.tFormat('resourceCalendarFor', { name: resource.name })} @change=${(event: Event) => this.updateResource(task.id, resource.id, 'calendarId', (event.target as HTMLSelectElement).value || undefined)}><option value="">${this.t('resource')}</option>${this.calendars.map(calendar => html`<option value=${calendar.id}>${calendar.name}</option>`)}</select></div>`;
     }
     if (column.editable && ['name', 'type', 'unitCost', 'quantity'].includes(column.key)) {
-      return html`<div class="resource-cell ${numeric ? 'numeric' : ''}"><input type=${numeric ? 'number' : 'text'} min=${numeric ? '0' : nothing} step=${numeric ? column.key === 'unitCost' ? '0.01' : '1' : nothing} .value=${String(value ?? '')} @change=${(event: Event) => this.updateResourceColumn(task, resource, column, (event.target as HTMLInputElement).value)} /></div>`;
+      return html`<div class="resource-cell ${numeric ? 'numeric' : ''}"><input type=${numeric ? 'number' : 'text'} min=${ifDefined(this.getResourceColumnMin(column))} .step=${this.getResourceColumnStepProperty(column)} .value=${String(value ?? '')} @change=${(event: Event) => this.updateResourceColumn(task, resource, column, (event.target as HTMLInputElement).value)} /></div>`;
     }
     if (column.editable) {
-      return html`<div class="resource-cell ${numeric ? 'numeric' : ''}"><input type=${numeric ? 'number' : 'text'} step=${numeric ? 'any' : nothing} .value=${String(value ?? '')} @change=${(event: Event) => this.updateResourceColumn(task, resource, column, (event.target as HTMLInputElement).value)} /></div>`;
+      return html`<div class="resource-cell ${numeric ? 'numeric' : ''}"><input type=${numeric ? 'number' : 'text'} min=${ifDefined(this.getResourceColumnMin(column))} .step=${this.getResourceColumnStepProperty(column)} .value=${String(value ?? '')} @change=${(event: Event) => this.updateResourceColumn(task, resource, column, (event.target as HTMLInputElement).value)} /></div>`;
     }
     return html`<div class="resource-cell ${numeric ? 'numeric' : ''}">${this.formatResourceColumnValue(value, column, resource, task)}</div>`;
   }
@@ -1367,8 +1379,41 @@ export class GanttChart extends LitElement {
   private formatResourceColumnValue(value: unknown, column: GanttResourceColumn, resource: GanttResource, task: GanttTask): string {
     if (value === null || value === undefined || value === '') return '';
     if (column.format) return column.format(value, resource, task);
-    if (column.type === 'number' && typeof value === 'number') return `${this.formatNumber(value)}${column.key === 'cost' ? ' €' : ''}`;
+    if (this.isNumericColumn(column) && typeof value === 'number') return `${this.formatNumber(value)}${column.key === 'cost' ? ' €' : ''}`;
     return String(value);
+  }
+
+  private isNumericColumn(column: { type?: string }): boolean {
+    return column.type === 'number' || column.type === 'integer' || column.type === 'decimal';
+  }
+
+  private getResourceColumnMin(column: GanttResourceColumn): number | undefined {
+    if (!this.isNumericColumn(column) && column.key !== 'totalQuantity') return undefined;
+    if (column.min !== undefined) return column.min;
+    return ['unitCost', 'quantity', 'totalQuantity'].includes(column.key) ? 0 : undefined;
+  }
+
+  private getResourceColumnStep(column: GanttResourceColumn): number | 'any' | undefined {
+    if (!this.isNumericColumn(column) && column.key !== 'totalQuantity') return undefined;
+    if (column.step !== undefined) return column.step;
+    if (column.type === 'decimal') return 'any';
+    if (column.type === 'integer' || ['quantity', 'totalQuantity'].includes(column.key)) return 1;
+    return column.key === 'unitCost' ? 0.01 : 'any';
+  }
+
+  /** HTMLInputElement.step is a string property; an empty value restores the browser default. */
+  private getResourceColumnStepProperty(column: GanttResourceColumn): string {
+    const step = this.getResourceColumnStep(column);
+    return step === undefined ? '' : String(step);
+  }
+
+  private normalizeResourceColumnValue(column: GanttResourceColumn, value: string): number | string {
+    if (!this.isNumericColumn(column)) return value;
+    let numberValue = Number(value);
+    if (!Number.isFinite(numberValue)) numberValue = 0;
+    if (column.type === 'integer') numberValue = Math.trunc(numberValue);
+    if (column.min !== undefined) numberValue = Math.max(column.min, numberValue);
+    return numberValue;
   }
 
   private updateResourceColumn(task: GanttTask, resource: GanttResource, column: GanttResourceColumn, value: string): void {
@@ -1377,7 +1422,7 @@ export class GanttChart extends LitElement {
       if (patch) this.updateResourcePatch(task.id, resource.id, patch);
       return;
     }
-    const nextValue = column.type === 'number' ? Number(value) || 0 : value;
+    const nextValue = this.normalizeResourceColumnValue(column, value);
     if (['name', 'type', 'unitCost', 'quantity', 'maxUnits'].includes(column.key)) {
       this.updateResource(task.id, resource.id, column.key as keyof GanttResource, nextValue);
       return;
@@ -1569,7 +1614,7 @@ export class GanttChart extends LitElement {
     return html`
       <div class="editor-section">
         <div class="editor-actions"><button class="primary" @click=${() => this.openResourcePicker(task.id)}>＋ ${this.t('addResource')}</button></div>
-        ${!this.resourceProvider && !this.options.resourcePicker ? html`<div class="editor-empty">Le référentiel peut être connecté plus tard avec <code>resourceProvider</code>.</div>` : nothing}
+        ${!this.resourceProvider && !this.options.resourcePicker ? html`<div class="editor-empty">${this.t('resourceProviderLater')}</div>` : nothing}
         ${resources.length ? html`<div class="editor-resource-list">${resources.map(resource => html`<div class="editor-resource-row"><span>${resource.name}</span><small>${resource.type} · ${this.formatNumber(this.getResourceCost(resource))} €</small><button class="danger" @click=${() => this.removeResource(task.id, resource.id)}>×</button></div>`)}</div>` : html`<div class="editor-empty">${this.t('noResourceAssigned')}</div>`}
       </div>
     `;
@@ -1654,8 +1699,8 @@ export class GanttChart extends LitElement {
             return html`<div class="task-segment" style="left:${segment.left - left}px; width:${segment.width}px"><div class="task-segment-progress" style="--segment-progress:${progressWidth}px"></div></div>`;
           })}
           <div class="task-work-label">${this.renderTaskBarContent(task, color, width)}</div>
-          <span class="resize-handle start" title="Réduire ou allonger au début" @pointerdown=${(event: PointerEvent) => this.startBarDrag(event, task, 'resize-start')}></span>
-          <span class="resize-handle end" title="Réduire ou allonger à la fin" @pointerdown=${(event: PointerEvent) => this.startBarDrag(event, task, 'resize-end')}></span>
+          <span class="resize-handle start" title=${this.t('resizeStart')} @pointerdown=${(event: PointerEvent) => this.startBarDrag(event, task, 'resize-start')}></span>
+          <span class="resize-handle end" title=${this.t('resizeEnd')} @pointerdown=${(event: PointerEvent) => this.startBarDrag(event, task, 'resize-end')}></span>
         </div>
       `;
     }
@@ -1713,7 +1758,7 @@ export class GanttChart extends LitElement {
     return html`
       <div class="timeline-header ${header.showWeeks ? 'with-weeks' : ''}">
         ${header.showMonths ? html`<div class="months">${months.map((month, index) => html`<div class="month" style="width:${month.count * dayWidth}px">${header.monthTemplate ? header.monthTemplate({ date: month.date, label: month.label, index, dayCount: month.count }) : month.label}</div>`)}</div>` : nothing}
-        ${header.showWeeks ? html`<div class="weeks">${weeks.map((week, index) => html`<div class="week" style="width:${week.count * dayWidth}px">${header.weekTemplate && week.start ? header.weekTemplate({ start: week.start, weekNumber: week.number, number: week.number, index, dayCount: week.count }) : `W ${week.number}`}</div>`)}</div>` : nothing}
+        ${header.showWeeks ? html`<div class="weeks">${weeks.map((week, index) => html`<div class="week" style="width:${week.count * dayWidth}px">${header.weekTemplate && week.start ? header.weekTemplate({ start: week.start, weekNumber: week.number, number: week.number, index, dayCount: week.count }) : this.tFormat('weekNumber', { number: week.number })}</div>`)}</div>` : nothing}
         ${header.showDays ? html`<div class="days">${header.dayGrouping === 'week'
           ? weeks.map((week, index) => week.start ? html`<div class="day week-date" style="width:${week.count * dayWidth}px" title=${this.formatDayTitle(week.start)}>${header.weekDateTemplate ? header.weekDateTemplate({ start: week.start, weekNumber: week.number, number: week.number, index, dayCount: week.count }) : this.renderDateHeaderCell(week.start, 'gantt', index, header.dayTemplate)}</div>` : nothing)
           : dates.map((date, index) => html`<div class="day ${this.isNonWorkingDay(date) ? 'weekend' : ''} ${this.isNonWorkingBlockStart(date) ? 'non-working-start' : ''} ${this.isWeekStart(date) ? 'week-start' : ''}" style="width:${dayWidth}px" title=${this.formatDayTitle(date)}>${this.renderDateHeaderCell(date, 'gantt', index, header.dayTemplate)}</div>`)
@@ -1902,7 +1947,7 @@ export class GanttChart extends LitElement {
       if (this.saveHook) saves.push(Promise.resolve(this.saveHook(change)));
       void Promise.all(saves).catch(error => {
         this.dispatch('persistence-error', { error, change });
-        this.setStatus('Échec de sauvegarde', 'error');
+        this.setStatus(this.t('saveFailed'), 'error');
       });
     }
   }
@@ -1984,7 +2029,7 @@ export class GanttChart extends LitElement {
       const file = input.files?.[0];
       if (!file) return;
       try { await this.importFile(file); }
-      catch (error) { this.setStatus(error instanceof Error ? error.message : 'Import impossible', 'error'); this.dispatch('project-file-error', { error }); }
+      catch (error) { this.setStatus(error instanceof Error ? error.message : this.t('importFailed'), 'error'); this.dispatch('project-file-error', { error }); }
     };
     input.click();
   }
@@ -1998,9 +2043,9 @@ export class GanttChart extends LitElement {
       link.download = `${this.projectName || 'projet-gantt'}.${extension}`;
       link.click();
       URL.revokeObjectURL(link.href);
-      this.setStatus(`Export ${extension.toUpperCase()} terminé`, 'success');
+      this.setStatus(this.tFormat('exportComplete', { extension: extension.toUpperCase() }), 'success');
     } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : 'Export impossible', 'error');
+      this.setStatus(error instanceof Error ? error.message : this.t('exportFailed'), 'error');
     }
   }
 
@@ -2008,15 +2053,15 @@ export class GanttChart extends LitElement {
     try {
       this.saveToLocalStorage();
     } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : 'Sauvegarde locale impossible', 'error');
+      this.setStatus(error instanceof Error ? error.message : this.t('saveLocalFailed'), 'error');
     }
   };
 
   private loadLocal = (): void => {
     try {
-      if (!this.loadFromLocalStorage()) this.setStatus('Aucun projet local trouvé', 'info');
+      if (!this.loadFromLocalStorage()) this.setStatus(this.t('noLocalProject'), 'info');
     } catch (error) {
-      this.setStatus(error instanceof Error ? error.message : 'Chargement local impossible', 'error');
+      this.setStatus(error instanceof Error ? error.message : this.t('loadLocalFailed'), 'error');
     }
   };
 
@@ -2024,9 +2069,9 @@ export class GanttChart extends LitElement {
     if (event.button !== 0) return;
     event.preventDefault();
     const startX = event.clientX;
-    const startWidth = this.getHeaderWidth();
-    const minimum = 220;
-    const maximum = Math.max(minimum + 120, 900);
+    const sizing = this.getTaskGridSizing();
+    const startWidth = this.getHeaderWidth(sizing);
+    const { minWidth: minimum, maxWidth: maximum } = sizing;
     const move = (moveEvent: PointerEvent): void => {
       const width = Math.max(minimum, Math.min(maximum, startWidth + moveEvent.clientX - startX));
       this.headerWidthOverride = width;
@@ -2573,7 +2618,7 @@ export class GanttChart extends LitElement {
   }
 
   private editTaskName(task: GanttTask): void {
-    const value = window.prompt('Nom de la tâche', task.name);
+    const value = window.prompt(this.t('name'), task.name);
     if (value !== null && value.trim() && value.trim() !== task.name) this.updateTask(task.id, { name: value.trim() });
   }
 
@@ -2739,7 +2784,7 @@ export class GanttChart extends LitElement {
   private formatColumnValue(value: unknown, column: GanttColumn, task: GanttTask): string {
     if (value === null || value === undefined || value === '') return '';
     if (column.format) return column.format(value, task);
-    if (column.type === 'number' && typeof value === 'number') return this.formatNumber(value);
+    if (this.isNumericColumn(column) && typeof value === 'number') return this.formatNumber(value);
     return String(value);
   }
 
@@ -3144,9 +3189,9 @@ export class GanttChart extends LitElement {
           task,
           assignReference: reference => this.addResourceFromReference(task.id, reference),
           addResource: (resource = {}) => this.addResource(task.id, resource),
-        })).catch(error => this.setStatus(error instanceof Error ? error.message : 'Sélection de ressource indisponible', 'error'));
+        })).catch(error => this.setStatus(error instanceof Error ? error.message : this.t('resourcePickerUnavailable'), 'error'));
       } catch (error) {
-        this.setStatus(error instanceof Error ? error.message : 'Sélection de ressource indisponible', 'error');
+      this.setStatus(error instanceof Error ? error.message : this.t('resourcePickerUnavailable'), 'error');
       }
       return;
     }
@@ -3195,7 +3240,7 @@ export class GanttChart extends LitElement {
     } catch (error) {
       if (request !== this.resourceReferenceRequest) return;
       this.resourceReferenceResults = [];
-      this.setStatus(error instanceof Error ? error.message : 'Référentiel de ressources indisponible', 'error');
+      this.setStatus(error instanceof Error ? error.message : this.t('resourceCatalogueUnavailable'), 'error');
     } finally {
       if (request === this.resourceReferenceRequest) {
         this.resourceReferenceLoading = false;
@@ -3207,7 +3252,7 @@ export class GanttChart extends LitElement {
   private addResourceFromReference(taskId: string, reference: GanttResourceReference): void {
     const task = this.findTask(taskId);
     if (task?.resources?.some(resource => resource.resourceId === reference.id)) {
-      this.setStatus(`La ressource ${reference.name} est déjà affectée à cette tâche`, 'info');
+      this.setStatus(this.tFormat('resourceAlreadyAssigned', { name: reference.name }), 'info');
       return;
     }
     this.addResource(taskId, {
@@ -3233,10 +3278,10 @@ export class GanttChart extends LitElement {
 
   private formatDependencyType(type: GanttDependency['type']): string {
     switch (type || 'finish-to-start') {
-      case 'start-to-start': return 'Début → Début';
-      case 'finish-to-finish': return 'Fin → Fin';
-      case 'start-to-finish': return 'Début → Fin';
-      default: return 'Fin → Début';
+      case 'start-to-start': return this.t('startToStart');
+      case 'finish-to-finish': return this.t('finishToFinish');
+      case 'start-to-finish': return this.t('startToFinish');
+      default: return this.t('finishToStart');
     }
   }
 
@@ -3262,9 +3307,28 @@ export class GanttChart extends LitElement {
   }
 
   private getDayWidth(): number { return (this.options.dayWidth ?? 24) * this.zoom; }
-  private getHeaderWidth(): number {
-    if (this.headerWidthOverride !== undefined) return Math.max(220, Math.min(900, this.headerWidthOverride));
-    return Math.max(this.options.headerWidth ?? 0, this.getColumns().reduce((total, column) => total + column.width, 0));
+  private getHeaderWidth(sizing = this.getTaskGridSizing()): number {
+    const naturalWidth = this.headerWidthOverride ?? Math.max(this.options.headerWidth ?? 0, this.getColumns().reduce((total, column) => total + column.width, 0));
+    return Math.max(sizing.minWidth, Math.min(sizing.maxWidth, naturalWidth));
+  }
+  private getTaskGridSizing(): { minWidth: number; maxWidth: number; minTimelineWidth: number } {
+    const splitter = this.options.taskGridSplitter || {};
+    const availableWidth = this.renderRoot.querySelector<HTMLElement>('.gantt-layout')?.clientWidth || this.clientWidth;
+    const minWidth = this.resolveTaskGridLength(splitter.minWidth, availableWidth, 220);
+    const minTimelineWidth = this.resolveTaskGridLength(splitter.minTimelineWidth, availableWidth, 160);
+    const availableMaximum = availableWidth > 0 ? Math.max(minWidth, availableWidth - minTimelineWidth) : Number.POSITIVE_INFINITY;
+    const configuredMaximum = this.resolveTaskGridLength(splitter.maxWidth, availableWidth, availableMaximum);
+    return { minWidth, minTimelineWidth, maxWidth: Math.max(minWidth, Math.min(availableMaximum, configuredMaximum)) };
+  }
+  private resolveTaskGridLength(value: number | string | undefined, availableWidth: number, fallback: number): number {
+    if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, value);
+    if (typeof value !== 'string') return fallback;
+    const match = /^([0-9]+(?:\.[0-9]+)?)\s*(px|vw|%)$/i.exec(value.trim());
+    if (!match) return fallback;
+    const amount = Number(match[1]);
+    if (match[2].toLowerCase() === 'px') return amount;
+    if (match[2].toLowerCase() === 'vw') return window.innerWidth * amount / 100;
+    return availableWidth * amount / 100;
   }
   private getGanttPanelHeight(): string {
     const configured = this.options.maxHeight;
@@ -3332,6 +3396,9 @@ export class GanttChart extends LitElement {
   private t(key: keyof GanttTranslations): string {
     const defaults = getBuiltInTranslations(this.getLocale());
     return this.options.translations?.[key] || defaults[key];
+  }
+  private tFormat(key: keyof GanttTranslations, values: Record<string, string | number>): string {
+    return this.t(key).replace(/\{(\w+)\}/g, (_match, name: string) => String(values[name] ?? `{${name}}`));
   }
 
   private getFirstDayOfWeek(): number {
