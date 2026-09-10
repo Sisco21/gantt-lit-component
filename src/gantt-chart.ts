@@ -48,6 +48,34 @@ import {
   stringifyMspXml,
 } from './project-codecs';
 import { getBuiltInTranslations } from './translations';
+import {
+  calculateResourceDateWindow,
+  calculateTaskGridSizing,
+  clampGanttPanelHeight,
+} from './gantt-layout';
+import { GanttHistory } from './gantt-history';
+import {
+  GanttDateFormatterCache,
+  alignRangeToWeeks as alignCalendarRangeToWeeks,
+  getWeekNumber as calculateWeekNumber,
+  getWeekStartDate as calculateWeekStartDate,
+  isNonWorkingBlockStart as calculateNonWorkingBlockStart,
+  isNonWorkingDay as calculateNonWorkingDay,
+  isResourceWorkingDay as calculateResourceWorkingDay,
+  isWeekStart as calculateWeekStart,
+  normalizeFirstDayOfWeek,
+} from './gantt-calendar';
+import {
+  distributeResourceQuantity,
+  getResourceCost as calculateResourceCost,
+  getResourceTotalQuantity as calculateResourceTotalQuantity,
+  roundResourceQuantity,
+} from './gantt-resources';
+import { scheduleInitialDependencies, scheduleTaskDates } from './gantt-scheduling';
+import { calculateProjectSummary } from './gantt-summary';
+import { flattenTaskTree, getTaskDepths, getTaskOutlineCodes, getTaskSubtreeIds } from './gantt-task-tree';
+import { calculateTaskCosts } from './gantt-task-costs';
+import { expandTaskAncestors, moveTaskParent, removeTaskBranch, reorderTaskBranch, setParentTasksCollapsed, toggleTaskCollapsed } from './gantt-task-actions';
 
 const ROW_HEIGHT = 42;
 const HEADER_HEIGHT = 58;
@@ -254,9 +282,11 @@ export class GanttChart extends LitElement {
     .split-viewport { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
     /* Le Gantt possède son défilement vertical. Les deux panneaux ci-dessous
        conservent chacun leur propre défilement horizontal. */
-    .gantt-viewport { flex: 0 0 var(--gantt-panel-height, 440px); height: var(--gantt-panel-height, 440px); min-height: 260px; overflow-x: hidden; overflow-y: auto; position: relative; overscroll-behavior: contain; }
-    /* La partie Ressources absorbe tout l'espace restant sous le Gantt. */
-    .resources-viewport { flex: 1 1 0; height: auto; min-height: 180px; overflow: hidden; position: relative; overscroll-behavior: contain; }
+    /* Both panes share the available component height. The planning grid can shrink
+       on compact viewports so the selected task's resources always retain a usable row. */
+    .gantt-panel { display: flex; flex: 0 1 var(--gantt-panel-height, 440px); flex-direction: column; min-width: 0; min-height: 140px; overflow: hidden; }
+    .gantt-viewport { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; position: relative; overscroll-behavior: contain; }
+    .resources-viewport { flex: 1 1 var(--resources-panel-height, 260px); height: auto; min-height: 132px; overflow: hidden; position: relative; overscroll-behavior: contain; }
 
     .gantt-layout {
       position: relative;
@@ -279,15 +309,14 @@ export class GanttChart extends LitElement {
     .timeline-content { position: relative; min-height: 100%; min-width: 100%; }
     .task-pane::-webkit-scrollbar, .timeline-scroll::-webkit-scrollbar { height: 0; width: 0; }
 
+    /* This reserved rail is outside the scrollable area, so the resources splitter
+       cannot overlap the Gantt horizontal scrollbar when the panel is compact. */
     .gantt-scrollbar-dock {
-      position: sticky;
-      top: calc(var(--gantt-panel-height) - 18px);
-      z-index: 40;
+      flex: 0 0 18px;
       display: grid;
       grid-template-columns: var(--header-width) minmax(var(--min-timeline-width, 160px), 1fr);
       width: 100%;
       height: 18px;
-      margin-bottom: -18px;
       background: var(--gantt-header);
       border-top: 1px solid var(--gantt-border);
     }
@@ -345,7 +374,7 @@ export class GanttChart extends LitElement {
     .column-menu label button { min-width: 24px; min-height: 23px; padding: 0 5px; }
     .column-menu-range { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 5px 8px; padding: 3px; }
     .column-menu-range label { grid-column: 1 / -1; min-height: auto; padding: 0; font-weight: 600; }
-    .column-menu-range input { width: 100%; accent-color: var(--gantt-blue); }
+    .column-menu-range input { width: 100%; }
     .column-menu-range output { min-width: 38px; color: var(--gantt-muted); font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; }
     .column-menu-actions { display: flex; justify-content: flex-end; margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--gantt-border); }
 
@@ -536,6 +565,11 @@ export class GanttChart extends LitElement {
     .resource-scroll-spacer { height: 1px; width: 100%; min-width: var(--resource-columns-width); }
     .resource-scroll-spacer.timeline { min-width: var(--timeline-width); }
     .resource-cell input, .resource-cell select { width: 100%; min-height: 21px; border: 1px solid var(--gantt-control-border); border-radius: 3px; background: var(--gantt-input-background); color: inherit; font: inherit; font-size: 11px; padding: 2px 4px; }
+    /* Native number steppers reserve width even for decimal fields configured with
+       step="any". Hide them in the dense resource grid; typing and keyboard arrows
+       still honour each column's configured min/step. */
+    .resource-cell input[type="number"] { appearance: textfield; }
+    .resource-cell input[type="number"]::-webkit-inner-spin-button, .resource-cell input[type="number"]::-webkit-outer-spin-button { margin: 0; appearance: none; }
     .resource-cell.numeric { text-align: right; }
     .resource-cell.total input { text-align: right; }
     .resource-add { margin: 8px 10px; }
@@ -565,7 +599,7 @@ export class GanttChart extends LitElement {
   projectFileAdapter?: ProjectFileAdapter;
   persistenceAdapter?: GanttPersistenceAdapter;
   saveHook?: GanttSaveHook;
-  /** Connectez ce fournisseur à votre API de référentiel lorsque celle-ci sera disponible. */
+  /** Connect this provider to a resource-catalogue API when one is available. */
   resourceProvider?: GanttResourceProvider;
   private _options: GanttOptions = {};
 
@@ -576,7 +610,7 @@ export class GanttChart extends LitElement {
     this.numberFormatter = undefined;
     if (!this.isHistoryEnabled()) this.clearHistory();
     else if (!historyWasEnabled) this.resetHistory();
-    else this.trimHistory();
+    else this.history.trim(this.getHistoryLimit());
     this.requestUpdate();
     this.emitProjectSummary();
   }
@@ -587,9 +621,7 @@ export class GanttChart extends LitElement {
   private projectName?: string;
   private projectMetadata?: Record<string, unknown>;
   private selectedTaskId: string | null = null;
-  private historyPast: GanttData[] = [];
-  private historyFuture: GanttData[] = [];
-  private historyCurrent?: GanttData;
+  private readonly history = new GanttHistory<GanttData>(data => structuredClone(data), data => JSON.stringify(data));
   private historyRestoring = false;
   private zoom = 1;
   private revision = 0;
@@ -631,14 +663,7 @@ export class GanttChart extends LitElement {
   private renderTaskCosts = new Map<string, number>();
   private numberFormatter?: Intl.NumberFormat;
   private numberFormatterLocale = '';
-  private dateFormatterLocale = '';
-  private dateFormatters?: {
-    month: Intl.DateTimeFormat;
-    weekday: Intl.DateTimeFormat;
-    weekdayNarrow: Intl.DateTimeFormat;
-    title: Intl.DateTimeFormat;
-  };
-  private readonly dateHeaderLabels = new Map<string, { weekday: string; weekdayNarrow: string; title: string }>();
+  private readonly dateFormatterCache = new GanttDateFormatterCache();
   private resourceTimelineViewport = { scrollLeft: 0, width: 0 };
   private resourceTimelineDayWidth = 24;
   private ganttViewport = { scrollTop: 0, height: 0 };
@@ -769,11 +794,8 @@ export class GanttChart extends LitElement {
             ${this.statusMessage ? html`<span class="status ${this.statusKind}">${this.statusMessage}</span>` : nothing}
           </div>
         <div class="split-viewport" @wheel=${this.handleWheel}>
-          <div class="gantt-viewport" @scroll=${this.handleGanttViewportScroll}>
-            <div class="gantt-scrollbar-dock" aria-label=${this.t('ganttHorizontalScroll')}>
-              <div class="gantt-horizontal-scroll" @scroll=${this.syncTaskGridScroll}><div class="gantt-scroll-spacer"></div></div>
-              <div class="gantt-horizontal-scroll" @scroll=${this.syncTimelineGridScroll}><div class="gantt-scroll-spacer timeline"></div></div>
-            </div>
+          <div class="gantt-panel">
+            <div class="gantt-viewport" @scroll=${this.handleGanttViewportScroll}>
             <div class="gantt-layout">
               <div class="task-header"><div class="task-columns">${this.getColumns().map(column => html`<div class="task-column" style="width:${this.getColumnWidth(column)}px" @dragover=${(event: DragEvent) => this.allowColumnDrop(event, 'task')} @drop=${(event: DragEvent) => this.dropColumn(event, 'task', column.key)}>${this.renderColumnDragHandle('task', column.key, column.label)}<span class="task-column-label">${column.label}</span>${this.canResizeColumns() ? html`<span class="task-column-resizer" role="separator" tabindex="0" aria-label=${this.tFormat('resizeColumn', { column: column.label })} @pointerdown=${(event: PointerEvent) => this.startTaskColumnResize(event, column)}></span>` : nothing}</div>`)}</div></div>
               ${this.renderTimelineHeader(range.start, totalDays, dayWidth)}
@@ -795,6 +817,11 @@ export class GanttChart extends LitElement {
               </div>
               ${this.options.taskGridSplitter?.enabled !== false ? html`<div class="column-resizer" role="separator" tabindex="0" aria-label=${this.t('resizeTaskGrid')} @pointerdown=${this.startColumnResize}></div>` : nothing}
             </div>
+            </div>
+            <div class="gantt-scrollbar-dock" aria-label=${this.t('ganttHorizontalScroll')}>
+              <div class="gantt-horizontal-scroll" @scroll=${this.syncTaskGridScroll}><div class="gantt-scroll-spacer"></div></div>
+              <div class="gantt-horizontal-scroll" @scroll=${this.syncTimelineGridScroll}><div class="gantt-scroll-spacer timeline"></div></div>
+            </div>
           </div>
           ${selectedTask ? html`<div class="resource-resizer" role="separator" tabindex="0" aria-label=${this.t('resizeResourceGrid')} @pointerdown=${this.startResourceResize}></div>` : nothing}
           ${selectedTask ? html`<div class="resources-viewport">${this.renderResourcePanel(selectedTask, range.start, totalDays, dayWidth)}</div>` : nothing}
@@ -814,31 +841,26 @@ export class GanttChart extends LitElement {
   }
 
   /** True when at least one completed local action can be undone. */
-  get canUndo(): boolean { return this.isHistoryEnabled() && this.historyPast.length > 0; }
+  get canUndo(): boolean { return this.isHistoryEnabled() && this.history.canUndo; }
 
   /** True when an undone action can be restored. */
-  get canRedo(): boolean { return this.isHistoryEnabled() && this.historyFuture.length > 0; }
+  get canRedo(): boolean { return this.isHistoryEnabled() && this.history.canRedo; }
 
   /** Restores the state before the latest completed local action. */
   undo = (): boolean => {
-    if (!this.canUndo || !this.historyCurrent) return false;
-    const previous = this.historyPast.pop();
+    if (!this.canUndo) return false;
+    const previous = this.history.undo();
     if (!previous) return false;
-    this.historyFuture.push(this.cloneHistoryData(this.historyCurrent));
-    this.historyCurrent = this.cloneHistoryData(previous);
-    this.restoreHistory(this.historyCurrent, 'history-undo');
+    this.restoreHistory(previous, 'history-undo');
     return true;
   };
 
   /** Reapplies the latest undone action. */
   redo = (): boolean => {
-    if (!this.canRedo || !this.historyCurrent) return false;
-    const next = this.historyFuture.pop();
+    if (!this.canRedo) return false;
+    const next = this.history.redo(this.getHistoryLimit());
     if (!next) return false;
-    this.historyPast.push(this.cloneHistoryData(this.historyCurrent));
-    this.trimHistory();
-    this.historyCurrent = this.cloneHistoryData(next);
-    this.restoreHistory(this.historyCurrent, 'history-redo');
+    this.restoreHistory(next, 'history-redo');
     return true;
   };
 
@@ -884,73 +906,7 @@ export class GanttChart extends LitElement {
   getProjectSummary(): GanttProjectSummary {
     const tasks = this.getFlatTasks();
     const referenceDate = this.getSummaryReferenceDate();
-    if (!tasks.length) {
-      return {
-        start: null, end: null, durationDays: 0, workingDurationDays: 0, referenceDate,
-        taskCount: 0, phaseCount: 0, milestoneCount: 0, progress: 0, overdueTaskCount: 0, nextDueDate: null,
-        totalCost: 0, plannedCost: 0, actualCost: 0, costVariance: 0, resourceCount: 0, totalResourceQuantity: 0, totalResourceCapacity: 0,
-      };
-    }
-    const resources = new Set<string>();
-    const resourceCapacities = new Map<string, number>();
-    let totalCost = 0;
-    let plannedCost = 0;
-    let actualCost = 0;
-    let totalResourceQuantity = 0;
-    let taskCount = 0;
-    let phaseCount = 0;
-    let milestoneCount = 0;
-    let progressWeight = 0;
-    let weightedProgress = 0;
-    let overdueTaskCount = 0;
-    let nextDueDate: string | null = null;
-    let start = tasks[0].start;
-    let end = tasks[0].end;
-    for (const task of tasks) {
-      if (task.start < start) start = task.start;
-      if (task.end > end) end = task.end;
-      const assignedResources = task.resources || [];
-      const resourceCost = assignedResources.reduce((sum, resource) => {
-        const resourceKey = resource.resourceId || `${task.id}:${resource.id}`;
-        resources.add(resourceKey);
-        totalResourceQuantity += this.getResourceTotalQuantity(resource);
-        resourceCapacities.set(resourceKey, Math.max(resourceCapacities.get(resourceKey) || 0, Number(resource.maxUnits) || 0));
-        return sum + this.getResourceCost(resource);
-      }, 0);
-      const ownCost = resourceCost || Number(task.unitCost || task.metadata?.unitCost || 0) * Number(task.quantity || task.metadata?.quantity || 0);
-      totalCost += ownCost;
-      plannedCost += Number(task.plannedCost ?? task.metadata?.plannedCost ?? ownCost) || 0;
-      actualCost += Number(task.actualCost ?? task.metadata?.actualCost ?? 0) || 0;
-
-      if (task.type === 'parent') {
-        phaseCount += 1;
-        continue;
-      }
-      if (task.type === 'milestone') milestoneCount += 1;
-      else taskCount += 1;
-      const duration = Math.max(1, diffDays(task.start, task.end) + 1);
-      progressWeight += duration;
-      weightedProgress += duration * Math.max(0, Math.min(100, Number(task.progress) || 0));
-      if ((Number(task.progress) || 0) < 100) {
-        if (task.end < referenceDate) overdueTaskCount += 1;
-        else if (!nextDueDate || task.end < nextDueDate) nextDueDate = task.end;
-      }
-    }
-    let workingDurationDays = 0;
-    const date = parseDateOnly(start);
-    const lastDate = parseDateOnly(end);
-    while (date <= lastDate) {
-      if (!this.isNonWorkingDay(date)) workingDurationDays += 1;
-      date.setUTCDate(date.getUTCDate() + 1);
-    }
-    const roundedPlannedCost = this.roundQuantity(plannedCost);
-    const roundedActualCost = this.roundQuantity(actualCost);
-    return {
-      start, end, durationDays: Math.max(0, diffDays(start, end) + 1), workingDurationDays, referenceDate,
-      taskCount, phaseCount, milestoneCount, progress: this.roundQuantity(progressWeight ? weightedProgress / progressWeight : 0), overdueTaskCount, nextDueDate,
-      totalCost: this.roundQuantity(totalCost), plannedCost: roundedPlannedCost, actualCost: roundedActualCost, costVariance: this.roundQuantity(roundedActualCost - roundedPlannedCost),
-      resourceCount: resources.size, totalResourceQuantity: this.roundQuantity(totalResourceQuantity), totalResourceCapacity: this.roundQuantity([...resourceCapacities.values()].reduce((sum, capacity) => sum + capacity, 0)),
-    };
+    return calculateProjectSummary(tasks, { referenceDate, isWorkingDay: date => !this.isNonWorkingDay(date) });
   }
 
   toJSON(): string { return stringifyJson(this.getData()); }
@@ -981,19 +937,19 @@ export class GanttChart extends LitElement {
     const saves: Promise<void>[] = [];
     if (this.persistenceAdapter) saves.push(this.persistenceAdapter.save(change));
     if (this.saveHook) saves.push(Promise.resolve(this.saveHook(change)));
-    if (!saves.length) throw new Error('Aucun persistenceAdapter ou saveHook configuré.');
+    if (!saves.length) throw new Error('No persistenceAdapter or saveHook is configured.');
     await Promise.all(saves);
     this.setStatus(this.t('projectSaved'), 'success');
   }
 
   saveToLocalStorage(key = this.getLocalStorageKey()): void {
-    if (typeof window === 'undefined' || !window.localStorage) throw new Error('localStorage est indisponible dans cet environnement.');
+    if (typeof window === 'undefined' || !window.localStorage) throw new Error('localStorage is unavailable in this environment.');
     window.localStorage.setItem(key, this.toJSON());
     this.setStatus(this.t('projectSavedLocal'), 'success');
   }
 
   loadFromLocalStorage(key = this.getLocalStorageKey()): boolean {
-    if (typeof window === 'undefined' || !window.localStorage) throw new Error('localStorage est indisponible dans cet environnement.');
+    if (typeof window === 'undefined' || !window.localStorage) throw new Error('localStorage is unavailable in this environment.');
     const raw = window.localStorage.getItem(key);
     if (!raw) return false;
     this.applyData(parseJson(raw), 'set-data', false);
@@ -1017,21 +973,12 @@ export class GanttChart extends LitElement {
   }
 
   toggleTask(taskId: string): void {
-    const toggle = (tasks: GanttTask[]): GanttTask[] => tasks.map(task => {
-      if (task.id === taskId) return { ...task, collapsed: !task.collapsed };
-      return task.children?.length ? { ...task, children: toggle(task.children) } : task;
-    });
-    this.tasks = toggle(this.tasks);
+    this.tasks = toggleTaskCollapsed(this.tasks, taskId);
     this.requestUpdate();
   }
 
   private setAllParentsCollapsed(collapsed: boolean): void {
-    const update = (tasks: GanttTask[]): GanttTask[] => tasks.map(task => ({
-      ...task,
-      collapsed: task.children?.length ? collapsed : task.collapsed,
-      children: task.children?.length ? update(task.children) : task.children,
-    }));
-    this.tasks = update(this.tasks);
+    this.tasks = setParentTasksCollapsed(this.tasks, collapsed);
     this.requestUpdate();
   }
 
@@ -1080,19 +1027,7 @@ export class GanttChart extends LitElement {
   }
 
   private expandAncestors(taskId: string): void {
-    const ancestors = new Set<string>();
-    let parentId = this.findTask(taskId)?.parentId || null;
-    while (parentId) {
-      ancestors.add(parentId);
-      parentId = this.findTask(parentId)?.parentId || null;
-    }
-    if (!ancestors.size) return;
-    const expand = (tasks: GanttTask[]): GanttTask[] => tasks.map(task => ({
-      ...task,
-      collapsed: ancestors.has(task.id) ? false : task.collapsed,
-      children: task.children?.length ? expand(task.children) : task.children,
-    }));
-    this.tasks = expand(this.tasks);
+    this.tasks = expandTaskAncestors(this.tasks, taskId);
   }
 
   private scrollTaskIntoView(taskId: string): void {
@@ -1190,7 +1125,7 @@ export class GanttChart extends LitElement {
     const changesDates = patch.start !== undefined || patch.end !== undefined;
     const base = this.getFlatTasks();
     let updated = changesDates
-      ? this.applyScheduledDates(base, taskId, patch.start || current.start, patch.end || current.end, patch.start !== undefined && patch.end !== undefined ? 'move' : patch.start !== undefined ? 'resize-start' : 'resize-end')
+      ? scheduleTaskDates(base, this.dependencies, taskId, patch.start || current.start, patch.end || current.end, patch.start !== undefined && patch.end !== undefined ? 'move' : patch.start !== undefined ? 'resize-start' : 'resize-end', (resource, date) => this.isResourceWorkingDay(resource, date))
       : base;
     updated = updated.map(task => task.id === taskId ? { ...task, ...patch, start: task.start, end: task.end, id: task.id } : task);
     this.replaceFlatTasks(updated, 'task-updated', taskId);
@@ -1203,7 +1138,7 @@ export class GanttChart extends LitElement {
     const task: GanttTask = {
       ...newTask,
       id: taskId,
-      name: newTask.name || 'Nouvelle tâche',
+      name: newTask.name || 'New task',
       start: newTask.start || today,
       end: newTask.end || this.addDays(today, 7),
       progress: newTask.progress ?? 0,
@@ -1249,16 +1184,16 @@ export class GanttChart extends LitElement {
   }
 
   private deleteTaskNow(taskId: string, descendants: GanttTask[]): void {
+    const result = removeTaskBranch(this.getFlatTasks(), this.dependencies, taskId);
     const descendantIds = new Set(descendants.map(task => task.id));
-    const next = this.getFlatTasks().filter(task => !descendantIds.has(task.id));
-    this.dependencies = this.dependencies.filter(dependency => !descendantIds.has(dependency.from) && !descendantIds.has(dependency.to));
-    this.replaceFlatTasks(next, 'task-deleted', taskId);
+    this.dependencies = result.dependencies;
+    this.replaceFlatTasks(result.tasks, 'task-deleted', taskId);
     if (this.selectedTaskId && descendantIds.has(this.selectedTaskId)) this.selectedTaskId = null;
   }
 
   moveTask(taskId: string, parentId: string | null): void {
     if (taskId === parentId || this.isDescendant(parentId, taskId)) return;
-    const next = this.getFlatTasks().map(task => task.id === taskId ? { ...task, parentId } : task);
+    const next = moveTaskParent(this.getFlatTasks(), taskId, parentId);
     this.replaceFlatTasks(next, 'task-moved', taskId);
   }
 
@@ -1266,24 +1201,9 @@ export class GanttChart extends LitElement {
   reorderTask(taskId: string, targetTaskId: string, position: 'before' | 'after'): void {
     if (taskId === targetTaskId || this.isDescendant(targetTaskId, taskId)) return;
     const flatTasks = this.getFlatTasks();
-    const movingIds = this.getTaskSubtreeIds(taskId, flatTasks);
-    if (!movingIds.size) return;
-
-    const movingTasks = flatTasks.filter(task => movingIds.has(task.id));
-    const remainingTasks = flatTasks.filter(task => !movingIds.has(task.id));
-    const targetIndex = remainingTasks.findIndex(task => task.id === targetTaskId);
-    const target = remainingTasks[targetIndex];
-    if (!target) return;
-
-    const movedRoot = movingTasks[0];
-    const reorderedTasks = [{ ...movedRoot, parentId: target.parentId }, ...movingTasks.slice(1)];
-    let insertIndex = targetIndex;
-    if (position === 'after') {
-      const targetSubtreeIds = this.getTaskSubtreeIds(targetTaskId, remainingTasks);
-      while (insertIndex < remainingTasks.length && targetSubtreeIds.has(remainingTasks[insertIndex].id)) insertIndex += 1;
-    }
-    remainingTasks.splice(insertIndex, 0, ...reorderedTasks);
-    this.replaceFlatTasks(remainingTasks, 'task-moved', taskId);
+    const reorderedTasks = reorderTaskBranch(flatTasks, taskId, targetTaskId, position);
+    if (!reorderedTasks) return;
+    this.replaceFlatTasks(reorderedTasks, 'task-moved', taskId);
   }
 
   addDependency(from: string, to: string, type: GanttDependency['type'] = 'finish-to-start'): void {
@@ -1729,7 +1649,7 @@ export class GanttChart extends LitElement {
         <div class="link-add">
           <select @change=${(event: Event) => this.addEditorDependency(task.id, event)}><option value="">${this.t('addPredecessor')}</option>${otherTasks.map(candidate => html`<option value=${candidate.id}>${candidate.code || candidate.id} — ${candidate.name}</option>`)}</select>
           <select @change=${(event: Event) => { this.taskEditorLinkType = (event.target as HTMLSelectElement).value as GanttDependency['type']; }}>
-            <option value="finish-to-start">Fin → Début</option><option value="start-to-start">Début → Début</option><option value="finish-to-finish">Fin → Fin</option><option value="start-to-finish">Début → Fin</option>
+            <option value="finish-to-start">${this.t('finishToStart')}</option><option value="start-to-start">${this.t('startToStart')}</option><option value="finish-to-finish">${this.t('finishToFinish')}</option><option value="start-to-finish">${this.t('startToFinish')}</option>
           </select>
         </div>
         ${links.length ? html`<div class="editor-link-list">${links.map(link => { const from = this.findTask(link.from); const to = this.findTask(link.to); return html`<div class="editor-link-row"><span>${from?.name || link.from} → ${to?.name || link.to}</span><small>${this.formatDependencyType(link.type)}</small><button class="danger" @click=${() => this.removeDependency(link.from, link.to)}>×</button></div>`; })}</div>` : html`<div class="editor-empty">${this.t('noLink')}</div>`}
@@ -2048,42 +1968,22 @@ export class GanttChart extends LitElement {
   private shouldShowHistoryControls(): boolean { return this.isHistoryEnabled() && this._options.history?.showControls !== false; }
 
   private resetHistory(data: GanttData = this.getData()): void {
-    this.historyPast = [];
-    this.historyFuture = [];
-    this.historyCurrent = this.isHistoryEnabled() ? this.cloneHistoryData(data) : undefined;
+    this.history.reset(this.isHistoryEnabled() ? data : undefined);
   }
 
   private recordHistory(data: GanttData): void {
     if (!this.isHistoryEnabled() || this.historyRestoring) return;
-    const snapshot = this.cloneHistoryData(data);
-    if (!this.historyCurrent) {
-      this.historyCurrent = snapshot;
-      return;
-    }
-    if (this.serializeHistoryData(this.historyCurrent) === this.serializeHistoryData(snapshot)) return;
-    this.historyPast.push(this.historyCurrent);
-    this.trimHistory();
-    this.historyFuture = [];
-    this.historyCurrent = snapshot;
-  }
-
-  private trimHistory(): void {
-    const limit = this.getHistoryLimit();
-    if (this.historyPast.length > limit) this.historyPast.splice(0, this.historyPast.length - limit);
+    this.history.record(data, this.getHistoryLimit());
   }
 
   private restoreHistory(data: GanttData, reason: 'history-undo' | 'history-redo'): void {
     this.historyRestoring = true;
     try {
-      this.applyData(this.cloneHistoryData(data), reason, true);
+      this.applyData(data, reason, true);
     } finally {
       this.historyRestoring = false;
     }
   }
-
-  private cloneHistoryData(data: GanttData): GanttData { return structuredClone(data); }
-
-  private serializeHistoryData(data: GanttData): string { return JSON.stringify(data); }
 
   private createChange(reason: GanttChangeReason, taskId?: string): GanttChange {
     return { projectId: this.projectId || null, revision: ++this.revision, reason, taskId, data: this.getData() };
@@ -2126,7 +2026,7 @@ export class GanttChart extends LitElement {
       const extension = format === 'mspxml' ? 'xml' : format;
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `${this.projectName || 'projet-gantt'}.${extension}`;
+      link.download = `${this.projectName || 'gantt-project'}.${extension}`;
       link.click();
       URL.revokeObjectURL(link.href);
       this.setStatus(this.tFormat('exportComplete', { extension: extension.toUpperCase() }), 'success');
@@ -2219,9 +2119,11 @@ export class GanttChart extends LitElement {
     event.preventDefault();
     const startY = event.clientY;
     const startGanttHeight = this.ganttPanelHeight;
+    const splitViewport = this.renderRoot.querySelector<HTMLElement>('.split-viewport');
+    const availableHeight = splitViewport?.clientHeight ?? 0;
     const move = (moveEvent: PointerEvent): void => {
       const delta = moveEvent.clientY - startY;
-      this.ganttPanelHeight = Math.max(260, Math.min(900, startGanttHeight + delta));
+      this.ganttPanelHeight = clampGanttPanelHeight(startGanttHeight + delta, availableHeight);
       this.splitUserResized = true;
       this.requestUpdate();
     };
@@ -2385,11 +2287,7 @@ export class GanttChart extends LitElement {
 
   /** Fenêtre horizontale rendue dans la grille Ressources (avec marge de sécurité). */
   private getResourceDateWindow(totalDays: number, dayWidth: number): { start: number; end: number } {
-    const viewportWidth = this.resourceTimelineViewport.width || Math.min(totalDays * dayWidth, 960);
-    const firstVisible = Math.floor(this.resourceTimelineViewport.scrollLeft / dayWidth);
-    const start = Math.max(0, firstVisible - 8);
-    const end = Math.min(totalDays, Math.ceil((this.resourceTimelineViewport.scrollLeft + viewportWidth) / dayWidth) + 8);
-    return { start, end: Math.max(start + 1, end) };
+    return calculateResourceDateWindow(totalDays, dayWidth, this.resourceTimelineViewport);
   }
 
   private updateResourceTimelineViewport(scrollLeft: number, width: number): void {
@@ -2404,6 +2302,13 @@ export class GanttChart extends LitElement {
 
   private handleKeyDown = (event: KeyboardEvent): void => {
     if (this.isEditableKeyboardTarget(event.target)) return;
+    if (event.key === 'Escape') {
+      const hasOverlay = Boolean(this.resourceContextMenu || this.ganttContextMenu || this.taskContextMenu || this.taskEditorId || this.resourcePickerTaskId);
+      this.closeOpenContextMenus();
+      this.closeTaskEditor();
+      if (hasOverlay) event.preventDefault();
+      return;
+    }
     if (this.matchesHistoryShortcut(event, this.options.history?.undoShortcut ?? ['Ctrl+z', 'Meta+z'])) {
       if (this.undo()) event.preventDefault();
       return;
@@ -2556,178 +2461,16 @@ export class GanttChart extends LitElement {
     mode: 'move' | 'resize-start' | 'resize-end' = 'move',
     baseTasks: GanttTask[] = this.getFlatTasks(),
   ): void {
-    const next = this.applyScheduledDates(baseTasks, taskId, start, end, mode);
+    const next = scheduleTaskDates(baseTasks, this.dependencies, taskId, start, end, mode, (resource, date) => this.isResourceWorkingDay(resource, date));
     this.tasks = buildTaskTree(next);
     this.requestUpdate();
-  }
-
-  private applyScheduledDates(
-    baseTasks: GanttTask[],
-    taskId: string,
-    requestedStart: string,
-    requestedEnd: string,
-    mode: 'move' | 'resize-start' | 'resize-end',
-  ): GanttTask[] {
-    const next = baseTasks.map(task => ({ ...task }));
-    const byId = new Map(next.map(task => [task.id, task]));
-    const childrenByParent = new Map<string, string[]>();
-    const outgoingBySource = new Map<string, GanttDependency[]>();
-    next.forEach(task => {
-      if (!task.parentId) return;
-      const children = childrenByParent.get(task.parentId) || [];
-      children.push(task.id);
-      childrenByParent.set(task.parentId, children);
-    });
-    this.dependencies.forEach(dependency => {
-      const dependencies = outgoingBySource.get(dependency.from) || [];
-      dependencies.push(dependency);
-      outgoingBySource.set(dependency.from, dependencies);
-    });
-    const root = byId.get(taskId);
-    if (!root) return next;
-
-    const shiftResourceDates = (task: GanttTask, days: number): void => {
-      if (!days || !task.resources?.length) return;
-      task.resources = task.resources.map(resource => {
-        if (!resource.quantityByDate) return resource;
-        const quantityByDate = Object.entries(resource.quantityByDate).reduce<Record<string, number>>((shifted, [date, quantity]) => {
-          shifted[this.addDays(date, days)] = quantity;
-          return shifted;
-        }, {});
-        return { ...resource, quantityByDate, totalQuantity: undefined, cost: undefined };
-      });
-    };
-
-    const redistributeResourceDates = (task: GanttTask): void => {
-      if (!task.resources?.length) return;
-      task.resources = task.resources.map(resource => {
-        if (!resource.quantityByDate) return resource;
-        const total = this.getResourceTotalQuantity(resource);
-        return { ...resource, quantity: total, quantityByDate: this.createDistributedQuantities(task.start, task.end, total, resource), totalQuantity: undefined, cost: undefined };
-      });
-    };
-
-    const shiftSubtree = (rootId: string, days: number): void => {
-      const task = byId.get(rootId);
-      if (!task) return;
-      task.start = this.addDays(task.start, days);
-      task.end = this.addDays(task.end, days);
-      shiftResourceDates(task, days);
-      childrenByParent.get(rootId)?.forEach(childId => shiftSubtree(childId, days));
-    };
-
-    if (mode === 'move') {
-      shiftSubtree(taskId, diffDays(root.start, requestedStart));
-    } else {
-      root.start = requestedStart;
-      root.end = requestedEnd;
-      redistributeResourceDates(root);
-    }
-
-    const visited = new Set<string>();
-    const propagate = (sourceId: string): void => {
-      if (visited.has(sourceId)) return;
-      visited.add(sourceId);
-      const source = byId.get(sourceId);
-      if (!source) return;
-
-      for (const dependency of outgoingBySource.get(sourceId) || []) {
-        const successor = byId.get(dependency.to);
-        if (!successor) continue;
-        const lag = dependency.lagDays || 0;
-        let requiredStart = successor.start;
-        let requiredEnd = successor.end;
-        switch (dependency.type || 'finish-to-start') {
-          case 'start-to-start': requiredStart = this.addDays(source.start, lag); break;
-          case 'finish-to-finish': requiredEnd = this.addDays(source.end, lag); break;
-          case 'start-to-finish': requiredEnd = this.addDays(source.start, lag); break;
-          default: requiredStart = this.addDays(source.end, lag + 1); break;
-        }
-
-        const shift = dependency.type === 'finish-to-finish' || dependency.type === 'start-to-finish'
-          ? diffDays(successor.end, requiredEnd)
-          : diffDays(successor.start, requiredStart);
-        if (shift > 0) shiftSubtree(successor.id, shift);
-        propagate(successor.id);
-      }
-    };
-
-    propagate(taskId);
-    return next;
   }
 
   /** Met le planning en cohérence avant le premier rendu : un lien Fin → Début
    * ne peut pas pointer vers une tâche qui commence avant la fin de sa source. */
   private applyInitialDependencySchedule(tasks: GanttTask[]): GanttTask[] {
     if (this.options.autoSchedule === false || !this.dependencies.length) return tasks;
-    const scheduled = tasks.map(task => ({ ...task }));
-    const byId = new Map(scheduled.map(task => [task.id, task]));
-    const childrenByParent = new Map<string, string[]>();
-    const outgoingBySource = new Map<string, GanttDependency[]>();
-    const incomingCount = new Map<string, number>();
-    const dependencyTaskIds = new Set<string>();
-
-    scheduled.forEach(task => {
-      if (!task.parentId) return;
-      const children = childrenByParent.get(task.parentId) || [];
-      children.push(task.id);
-      childrenByParent.set(task.parentId, children);
-    });
-    this.dependencies.forEach(dependency => {
-      if (!byId.has(dependency.from) || !byId.has(dependency.to)) return;
-      const dependencies = outgoingBySource.get(dependency.from) || [];
-      dependencies.push(dependency);
-      outgoingBySource.set(dependency.from, dependencies);
-      incomingCount.set(dependency.to, (incomingCount.get(dependency.to) || 0) + 1);
-      dependencyTaskIds.add(dependency.from);
-      dependencyTaskIds.add(dependency.to);
-    });
-
-    const shiftResourceDates = (task: GanttTask, days: number): void => {
-      if (!days || !task.resources?.length) return;
-      task.resources = task.resources.map(resource => {
-        if (!resource.quantityByDate) return resource;
-        const quantityByDate = Object.entries(resource.quantityByDate).reduce<Record<string, number>>((shifted, [date, quantity]) => {
-          shifted[this.addDays(date, days)] = quantity;
-          return shifted;
-        }, {});
-        return { ...resource, quantityByDate, totalQuantity: undefined, cost: undefined };
-      });
-    };
-    const shiftSubtree = (taskId: string, days: number): void => {
-      const task = byId.get(taskId);
-      if (!task || !days) return;
-      task.start = this.addDays(task.start, days);
-      task.end = this.addDays(task.end, days);
-      shiftResourceDates(task, days);
-      childrenByParent.get(taskId)?.forEach(childId => shiftSubtree(childId, days));
-    };
-
-    // Process each acyclic dependency once in topological order. The previous
-    // implementation replayed the whole graph for every link, causing a large
-    // quadratic cost as soon as an imported schedule had many dependencies.
-    const ready = [...dependencyTaskIds].filter(taskId => !incomingCount.get(taskId));
-    while (ready.length) {
-      const sourceId = ready.shift()!;
-      const source = byId.get(sourceId);
-      if (!source) continue;
-      for (const dependency of outgoingBySource.get(sourceId) || []) {
-        const successor = byId.get(dependency.to);
-        if (!successor) continue;
-        const lag = dependency.lagDays || 0;
-        const requiredDate = (dependency.type || 'finish-to-start') === 'start-to-start' || (dependency.type || 'finish-to-start') === 'start-to-finish'
-          ? this.addDays(source.start, lag)
-          : this.addDays(source.end, (dependency.type || 'finish-to-start') === 'finish-to-start' ? lag + 1 : lag);
-        const shift = dependency.type === 'finish-to-finish' || dependency.type === 'start-to-finish'
-          ? diffDays(successor.end, requiredDate)
-          : diffDays(successor.start, requiredDate);
-        if (shift > 0) shiftSubtree(successor.id, shift);
-        const remaining = (incomingCount.get(successor.id) || 0) - 1;
-        incomingCount.set(successor.id, remaining);
-        if (remaining === 0) ready.push(successor.id);
-      }
-    }
-    return scheduled;
+    return scheduleInitialDependencies(tasks, this.dependencies);
   }
 
   private editTaskName(task: GanttTask): void {
@@ -2740,19 +2483,12 @@ export class GanttChart extends LitElement {
   private isTaskDeletionEnabled(): boolean { return this.options.taskDeletion?.enabled !== false; }
 
   private getFlatTasks(): GanttTask[] {
-    const result: GanttTask[] = [];
-    const visit = (tasks: GanttTask[]) => tasks.forEach(task => { result.push({ ...task, children: undefined }); if (task.children?.length) visit(task.children); });
-    visit(this.tasks);
-    return result;
+    return flattenTaskTree(this.tasks);
   }
 
   /** Returns the contiguous tree branch to preserve when a row is repositioned. */
   private getTaskSubtreeIds(rootId: string, tasks: GanttTask[]): Set<string> {
-    const ids = new Set<string>([rootId]);
-    for (let index = 0; index < tasks.length; index += 1) {
-      if (ids.has(tasks[index].parentId || '')) ids.add(tasks[index].id);
-    }
-    return ids;
+    return getTaskSubtreeIds(rootId, tasks);
   }
 
   private getTaskSubtreeTasks(rootId: string): GanttTask[] {
@@ -2764,43 +2500,10 @@ export class GanttChart extends LitElement {
   /** Prépare les index nécessaires au rendu, une seule fois par mise à jour. */
   private prepareRenderCaches(flatTasks: GanttTask[]): void {
     this.renderTaskIndex = new Map(flatTasks.map(task => [task.id, task]));
-    this.renderTaskDepths = new Map();
-    this.renderTaskCodes = new Map();
-    const indexOutline = (tasks: GanttTask[], prefix = ''): void => {
-      tasks.forEach((task, index) => {
-        const code = prefix ? `${prefix}.${index + 1}` : String(index + 1);
-        this.renderTaskCodes.set(task.id, code);
-        if (task.children?.length) indexOutline(task.children, code);
-      });
-    };
-    indexOutline(this.tasks);
-    const resolveDepth = (taskId: string, visiting = new Set<string>()): number => {
-      const cached = this.renderTaskDepths.get(taskId);
-      if (cached !== undefined) return cached;
-      const task = this.renderTaskIndex.get(taskId);
-      if (!task?.parentId || visiting.has(taskId)) {
-        this.renderTaskDepths.set(taskId, 0);
-        return 0;
-      }
-      visiting.add(taskId);
-      const depth = 1 + resolveDepth(task.parentId, visiting);
-      visiting.delete(taskId);
-      this.renderTaskDepths.set(taskId, depth);
-      return depth;
-    };
-    flatTasks.forEach(task => resolveDepth(task.id));
+    this.renderTaskDepths = getTaskDepths(flatTasks);
+    this.renderTaskCodes = getTaskOutlineCodes(this.tasks);
 
-    this.renderTaskCosts = new Map();
-    const resolveCost = (task: GanttTask): number => {
-      const cached = this.renderTaskCosts.get(task.id);
-      if (cached !== undefined) return cached;
-      const ownResources = (task.resources || []).reduce((total, resource) => total + this.getResourceCost(resource), 0);
-      const ownCost = ownResources || Number(task.unitCost || task.metadata?.unitCost || 0) * Number(task.quantity || task.metadata?.quantity || 0);
-      const total = ownCost + (task.children || []).reduce((sum, child) => sum + resolveCost(child), 0);
-      this.renderTaskCosts.set(task.id, total);
-      return total;
-    };
-    this.tasks.forEach(resolveCost);
+    this.renderTaskCosts = calculateTaskCosts(this.tasks, resource => this.getResourceCost(resource));
   }
 
   private findTask(taskId: string | null): GanttTask | null {
@@ -3124,36 +2827,20 @@ export class GanttChart extends LitElement {
   }
 
   private getResourceTotalQuantity(resource: GanttResource): number {
-    const daily = resource.quantityByDate;
-    if (daily && Object.keys(daily).length) return this.roundQuantity(Object.values(daily).reduce((total, value) => total + (Number(value) || 0), 0));
-    return this.roundQuantity(Number(resource.totalQuantity ?? resource.quantity) || 0);
+    return calculateResourceTotalQuantity(resource);
   }
 
   /** Quantities are stored to two decimals; normalize sums to avoid binary floating-point artefacts. */
   private roundQuantity(value: number): number {
-    return Math.round((value + Number.EPSILON) * 100) / 100;
+    return roundResourceQuantity(value);
   }
 
   private createDistributedQuantities(start: string, end: string, requestedTotal: number, resource?: GanttResource): Record<string, number> | undefined {
-    const total = Number.isFinite(requestedTotal) && requestedTotal > 0 ? this.roundQuantity(requestedTotal) : 0;
-    if (!total) return undefined;
-    const dates = Array.from({ length: Math.max(1, diffDays(start, end) + 1) }, (_, index) => this.addDays(start, index));
-    const workingDates = resource ? dates.filter(date => this.isResourceWorkingDay(resource, parseDateOnly(date))) : dates;
-    if (!workingDates.length) return undefined;
-    const days = workingDates.length;
-    const amountPerDay = this.roundQuantity(total / days);
-    const quantityByDate: Record<string, number> = {};
-    let allocated = 0;
-    for (let index = 0; index < days; index += 1) {
-      const value = index === days - 1 ? this.roundQuantity(total - allocated) : amountPerDay;
-      if (value > 0) quantityByDate[workingDates[index]] = value;
-      allocated = this.roundQuantity(allocated + value);
-    }
-    return quantityByDate;
+    return distributeResourceQuantity(start, end, requestedTotal, resource, (item, date) => this.isResourceWorkingDay(item, date));
   }
 
   private getResourceCost(resource: GanttResource): number {
-    return this.roundQuantity(this.getResourceTotalQuantity(resource) * (Number(resource.unitCost) || 0));
+    return calculateResourceCost(resource);
   }
 
   private getWorkSegments(task: GanttTask, timelineStart: Date, dayWidth: number): Array<{ left: number; width: number }> | null {
@@ -3460,7 +3147,7 @@ export class GanttChart extends LitElement {
     const start = this.addDays(current.end, 1);
     const created: GanttTask = {
       id: this.createId(),
-      name: 'Nouvelle tâche',
+      name: 'New task',
       start,
       end: this.addDays(start, 6),
       progress: 0,
@@ -3629,21 +3316,7 @@ export class GanttChart extends LitElement {
   private getTaskGridSizing(): { minWidth: number; maxWidth: number; minTimelineWidth: number } {
     const splitter = this.options.taskGridSplitter || {};
     const availableWidth = this.renderRoot.querySelector<HTMLElement>('.gantt-layout')?.clientWidth || this.clientWidth;
-    const minWidth = this.resolveTaskGridLength(splitter.minWidth, availableWidth, 220);
-    const minTimelineWidth = this.resolveTaskGridLength(splitter.minTimelineWidth, availableWidth, 160);
-    const availableMaximum = availableWidth > 0 ? Math.max(minWidth, availableWidth - minTimelineWidth) : Number.POSITIVE_INFINITY;
-    const configuredMaximum = this.resolveTaskGridLength(splitter.maxWidth, availableWidth, availableMaximum);
-    return { minWidth, minTimelineWidth, maxWidth: Math.max(minWidth, Math.min(availableMaximum, configuredMaximum)) };
-  }
-  private resolveTaskGridLength(value: number | string | undefined, availableWidth: number, fallback: number): number {
-    if (typeof value === 'number' && Number.isFinite(value)) return Math.max(0, value);
-    if (typeof value !== 'string') return fallback;
-    const match = /^([0-9]+(?:\.[0-9]+)?)\s*(px|vw|%)$/i.exec(value.trim());
-    if (!match) return fallback;
-    const amount = Number(match[1]);
-    if (match[2].toLowerCase() === 'px') return amount;
-    if (match[2].toLowerCase() === 'vw') return window.innerWidth * amount / 100;
-    return availableWidth * amount / 100;
+    return calculateTaskGridSizing(splitter, availableWidth, window.innerWidth);
   }
   private getGanttPanelHeight(): string {
     const configured = this.options.maxHeight;
@@ -3672,40 +3345,14 @@ export class GanttChart extends LitElement {
   private applyColors(): void { const colors = this.getColors(); const styles = this.style; if (colors.headerBackground) styles.setProperty('--gantt-header', colors.headerBackground); if (colors.rowBackground) styles.setProperty('--gantt-row', colors.rowBackground); if (colors.rowAltBackground) styles.setProperty('--gantt-row-alt', colors.rowAltBackground); }
   private createId(): string { return globalThis.crypto?.randomUUID?.() || `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
   private getLocale(): string {
-    const locale = this.options.locale || globalThis.navigator?.language || 'fr-FR';
-    try { Intl.getCanonicalLocales(locale); return locale; } catch { return 'fr-FR'; }
+    const locale = this.options.locale || 'en-US';
+    try { Intl.getCanonicalLocales(locale); return locale; } catch { return 'en-US'; }
   }
 
-  /** Réutilise les formateurs et libellés de dates, très sollicités par les en-têtes lors du défilement. */
-  private getDateFormatters() {
-    const locale = this.getLocale();
-    if (!this.dateFormatters || this.dateFormatterLocale !== locale) {
-      this.dateFormatterLocale = locale;
-      this.dateHeaderLabels.clear();
-      this.dateFormatters = {
-        month: new Intl.DateTimeFormat(locale, { month: 'short', year: 'numeric', timeZone: 'UTC' }),
-        weekday: new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' }),
-        weekdayNarrow: new Intl.DateTimeFormat(locale, { weekday: 'narrow', timeZone: 'UTC' }),
-        title: new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }),
-      };
-    }
-    return this.dateFormatters;
-  }
-
-  private getMonthLabel(date: Date): string { return this.getDateFormatters().month.format(date); }
+  private getMonthLabel(date: Date): string { return this.dateFormatterCache.formatMonth(date, this.getLocale()); }
 
   private getDateHeaderLabels(date: Date): { weekday: string; weekdayNarrow: string; title: string } {
-    const formatters = this.getDateFormatters();
-    const key = formatDate(date);
-    const cached = this.dateHeaderLabels.get(key);
-    if (cached) return cached;
-    const labels = {
-      weekday: formatters.weekday.format(date),
-      weekdayNarrow: formatters.weekdayNarrow.format(date),
-      title: formatters.title.format(date),
-    };
-    this.dateHeaderLabels.set(key, labels);
-    return labels;
+    return this.dateFormatterCache.formatHeaderLabels(date, this.getLocale());
   }
 
   private t(key: keyof GanttTranslations): string {
@@ -3717,41 +3364,21 @@ export class GanttChart extends LitElement {
   }
 
   private getFirstDayOfWeek(): number {
-    const value = this.options.firstDayOfWeek ?? 1;
-    return Number.isInteger(value) && value >= 0 && value <= 6 ? value : 1;
+    return normalizeFirstDayOfWeek(this.options.firstDayOfWeek);
   }
 
-  private isWeekStart(date: Date): boolean { return date.getUTCDay() === this.getFirstDayOfWeek(); }
+  private isWeekStart(date: Date): boolean { return calculateWeekStart(date, this.getFirstDayOfWeek()); }
 
   private getWeekStartDate(date: Date): Date {
-    const start = new Date(date.getTime());
-    start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() - this.getFirstDayOfWeek() + 7) % 7));
-    return start;
+    return calculateWeekStartDate(date, this.getFirstDayOfWeek());
   }
 
   private getWeekNumber(date: Date): number {
-    if (this.options.weekNumbering === 'iso') return this.getIsoWeekNumber(date);
-    const firstFullWeek = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
-    const firstDay = this.getFirstDayOfWeek();
-    firstFullWeek.setUTCDate(firstFullWeek.getUTCDate() + ((firstDay - firstFullWeek.getUTCDay() + 7) % 7));
-    if (date < firstFullWeek) return this.getWeekNumber(new Date(Date.UTC(date.getUTCFullYear() - 1, 11, 31)));
-    return Math.floor(diffDays(firstFullWeek, date) / 7) + 1;
-  }
-
-  private getIsoWeekNumber(date: Date): number {
-    const thursday = new Date(date.getTime());
-    thursday.setUTCDate(thursday.getUTCDate() + 4 - (thursday.getUTCDay() || 7));
-    const yearStart = new Date(Date.UTC(thursday.getUTCFullYear(), 0, 1));
-    return Math.ceil((diffDays(yearStart, thursday) + 1) / 7);
+    return calculateWeekNumber(date, this.getFirstDayOfWeek(), this.options.weekNumbering);
   }
 
   private alignRangeToWeeks(range: { start: Date; end: Date }): { start: Date; end: Date } {
-    const start = new Date(range.start.getTime());
-    const end = new Date(range.end.getTime());
-    const firstDay = this.getFirstDayOfWeek();
-    start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() - firstDay + 7) % 7));
-    end.setUTCDate(end.getUTCDate() + ((firstDay + 6 - end.getUTCDay() + 7) % 7));
-    return { start, end };
+    return alignCalendarRangeToWeeks(range, this.getFirstDayOfWeek());
   }
 
   private formatDayTitle(date: Date): string { return this.getDateHeaderLabels(date).title; }
@@ -3762,22 +3389,13 @@ export class GanttChart extends LitElement {
   }
 
   private getNonWorkingDays(): number[] { return this.options.nonWorkingDays === undefined ? [0, 6] : this.options.nonWorkingDays.filter(day => Number.isInteger(day) && day >= 0 && day <= 6); }
-  private isNonWorkingDay(date: Date): boolean { return this.getNonWorkingDays().includes(date.getUTCDay()); }
-  private isNonWorkingBlockStart(date: Date): boolean {
-    if (!this.isNonWorkingDay(date)) return false;
-    const previous = new Date(date.getTime());
-    previous.setUTCDate(previous.getUTCDate() - 1);
-    return !this.isNonWorkingDay(previous);
-  }
+  private isNonWorkingDay(date: Date): boolean { return calculateNonWorkingDay(date, this.getNonWorkingDays()); }
+  private isNonWorkingBlockStart(date: Date): boolean { return calculateNonWorkingBlockStart(date, this.getNonWorkingDays()); }
   private getResourceCalendar(resource: GanttResource): GanttCalendar | undefined { return this.calendars.find(calendar => calendar.id === resource.calendarId); }
   private getResourceCalendarLabel(resource: GanttResource): string { return this.getResourceCalendar(resource)?.name || this.t('resource'); }
   private isResourceWorkingDay(resource: GanttResource, date: Date): boolean {
     const calendar = this.getResourceCalendar(resource);
-    const exception = calendar?.exceptions?.[formatDate(date)];
-    if (exception === 'working') return true;
-    if (exception === 'non-working') return false;
-    const workingDays = calendar?.workingDays;
-    return workingDays ? workingDays.includes(date.getUTCDay()) : !this.isNonWorkingDay(date);
+    return calculateResourceWorkingDay(resource, calendar, date, this.getNonWorkingDays());
   }
   private isResourceNonWorkingBlockStart(resource: GanttResource, date: Date): boolean {
     if (this.isResourceWorkingDay(resource, date)) return false;

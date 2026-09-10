@@ -1,13 +1,13 @@
 {
-  "name": "Projet Démo",
+  "name": "Demo project",
   "calendars": [
-    { "id": "crew-weekdays", "name": "Équipe — lundi au vendredi", "workingDays": [1, 2, 3, 4, 5] },
-    { "id": "site-six-days", "name": "Chantier — lundi au samedi", "workingDays": [1, 2, 3, 4, 5, 6] }
+    { "id": "crew-weekdays", "name": "Crew — Monday to Friday", "workingDays": [1, 2, 3, 4, 5] },
+    { "id": "site-six-days", "name": "Site — Monday to Saturday", "workingDays": [1, 2, 3, 4, 5, 6] }
   ],
   "tasks": [
     {
       "id": "1",
-      "name": "Phase 1: Planification",
+      "name": "Phase 1: Planning",
       "start": "2026-01-15",
       "end": "2026-02-15",
       "progress": 100,
@@ -16,29 +16,29 @@
     },
     {
       "id": "2",
-      "name": "Recherche marché",
+      "name": "Market research",
       "start": "2026-01-15",
       "end": "2026-02-01",
       "progress": 100,
       "parentId": "1",
       "type": "task",
-      "mode": "Manuel",
+      "mode": "Manual",
       "code": "1.1",
-      "unit": "J",
+      "unit": "day",
       "unitCost": 400,
       "quantity": 1,
       "quantityPerDay": 1,
       "actualCost": 68200,
       "resources": [
-        { "id": "resource-1", "name": "Ouvrier qualifié", "type": "1-Personnel", "unit": "J", "unitCost": 400, "quantity": 1, "calendarId": "crew-weekdays", "maxUnits": 2, "metadata": { "coefficient": 1.15 },
+        { "id": "resource-1", "name": "Qualified worker", "type": "1-Work", "unit": "day", "unitCost": 400, "quantity": 1, "calendarId": "crew-weekdays", "maxUnits": 2, "metadata": { "coefficient": 1.15 },
           "quantityByDate": { "2026-01-15": 2, "2026-01-16": 1, "2026-01-19": 1, "2026-01-20": 1, "2026-01-21": 1, "2026-01-22": 1, "2026-01-23": 1, "2026-01-26": 1, "2026-01-27": 1, "2026-01-28": 1, "2026-01-29": 1, "2026-01-30": 1 } },
-        { "id": "resource-2", "name": "Barrière de chantier", "type": "4-Fourniture", "unit": "U", "unitCost": 50, "quantity": 100, "calendarId": "site-six-days", "maxUnits": 100, "metadata": { "coefficient": 1.05 },
+        { "id": "resource-2", "name": "Site barrier", "type": "4-Material", "unit": "unit", "unitCost": 50, "quantity": 100, "calendarId": "site-six-days", "maxUnits": 100, "metadata": { "coefficient": 1.05 },
           "quantityByDate": { "2026-01-15": 100, "2026-01-16": 100, "2026-01-19": 100, "2026-01-20": 100, "2026-01-21": 100, "2026-01-22": 100, "2026-01-23": 100, "2026-01-26": 100, "2026-01-27": 100, "2026-01-28": 100, "2026-01-29": 100, "2026-01-30": 100, "2026-01-31": 100 } }
       ]
     },
     {
       "id": "12",
-      "name": "Sous-phase : Conception fonctionnelle",
+      "name": "Sub-phase: Functional design",
       "start": "2026-02-02",
       "end": "2026-02-15",
       "progress": 80,
@@ -47,7 +47,7 @@
     },
     {
       "id": "3",
-      "name": "Définition du cahier des charges",
+      "name": "Requirements definition",
       "start": "2026-02-02",
       "end": "2026-02-15",
       "progress": 80,
@@ -57,7 +57,7 @@
     },
     {
       "id": "4",
-      "name": "Phase 2: Développement",
+      "name": "Phase 2: Development",
       "start": "2026-02-16",
       "end": "2026-05-31",
       "progress": 45,
@@ -66,7 +66,7 @@
     },
     {
       "id": "5",
-      "name": "Développement frontend",
+      "name": "Frontend development",
       "start": "2026-02-16",
       "end": "2026-04-15",
       "progress": 60,
@@ -76,7 +76,7 @@
     },
     {
       "id": "6",
-      "name": "Développement backend",
+      "name": "Backend development",
       "start": "2026-03-01",
       "end": "2026-04-30",
       "progress": 40,
@@ -96,7 +96,7 @@
     },
     {
       "id": "8",
-      "name": "Phase 3: Tests",
+      "name": "Phase 3: Testing",
       "start": "2026-05-15",
       "end": "2026-06-15",
       "progress": 10,
@@ -105,7 +105,7 @@
     },
     {
       "id": "9",
-      "name": "Tests unitaires",
+      "name": "Unit testing",
       "start": "2026-05-15",
       "end": "2026-06-01",
       "progress": 15,
@@ -115,7 +115,7 @@
     },
     {
       "id": "10",
-      "name": "Tests intégration",
+      "name": "Integration testing",
       "start": "2026-06-02",
       "end": "2026-06-15",
       "progress": 0,
@@ -124,7 +124,7 @@
     },
     {
       "id": "11",
-      "name": "Lancement production",
+      "name": "Production launch",
       "start": "2026-06-20",
       "end": "2026-06-20",
       "progress": 0,

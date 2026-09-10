@@ -30,12 +30,12 @@ export function stringifyJson(data: GanttData): string {
 }
 
 export function parseMspXml(xml: string): GanttData {
-  if (typeof DOMParser === 'undefined') throw new Error('DOMParser est indisponible dans cet environnement.');
+  if (typeof DOMParser === 'undefined') throw new Error('DOMParser is unavailable in this environment.');
   const document = new DOMParser().parseFromString(xml, 'application/xml');
   const parserError = document.querySelector('parsererror');
-  if (parserError) throw new Error(`XML Microsoft Project invalide: ${parserError.textContent || 'erreur inconnue'}`);
+  if (parserError) throw new Error(`Invalid Microsoft Project XML: ${parserError.textContent || 'unknown error'}`);
 
-  const taskElements = Array.from(document.getElementsByTagNameNS('*', 'Task'));
+  const taskElements = getElementsByLocalName(document, 'Task');
   const tasks: GanttTask[] = [];
   const dependencies: GanttData['dependencies'] = [];
   const outlineStack: string[] = [];
@@ -55,7 +55,7 @@ export function parseMspXml(xml: string): GanttData {
 
     tasks.push({
       id,
-      name: childText(element, 'Name') || `Tâche ${id}`,
+      name: childText(element, 'Name') || `Task ${id}`,
       start,
       end,
       progress: clampProgress(Number(childText(element, 'PercentComplete') || '0')),
@@ -65,7 +65,7 @@ export function parseMspXml(xml: string): GanttData {
 
     outlineStack[outlineLevel - 1] = id;
 
-    for (const link of Array.from(element.getElementsByTagNameNS('*', 'PredecessorLink'))) {
+    for (const link of getElementsByLocalName(element, 'PredecessorLink')) {
       const predecessor = childText(link, 'PredecessorUID');
       if (!predecessor) continue;
       dependencies.push({
@@ -123,7 +123,7 @@ export function stringifyMspXml(data: GanttData): string {
 
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Project xmlns="http://schemas.microsoft.com/project">
-  <Name>${escapeXml(data.name || 'Projet Gantt')}</Name>
+  <Name>${escapeXml(data.name || 'Gantt project')}</Name>
   <CalendarUID>1</CalendarUID>
   <Tasks>${taskXml}
   </Tasks>
@@ -135,10 +135,10 @@ export async function importProjectFile(file: File, adapter?: ProjectFileAdapter
   if (extension === 'json') return parseJson(await file.text());
   if (extension === 'xml') return parseMspXml(await file.text());
   if (extension === 'mpp') {
-    if (!adapter) throw new Error('Le format .mpp binaire nécessite un ProjectFileAdapter côté serveur.');
+    if (!adapter) throw new Error('Binary .mpp files require a server-side ProjectFileAdapter.');
     return normalizeProject(await adapter.importMpp(file));
   }
-  throw new Error('Format de fichier non supporté. Utilisez .json, .xml ou .mpp.');
+  throw new Error('Unsupported file format. Use .json, .xml, or .mpp.');
 }
 
 export async function exportProjectFile(
@@ -148,13 +148,13 @@ export async function exportProjectFile(
 ): Promise<Blob> {
   if (format === 'json') return new Blob([stringifyJson(data)], { type: 'application/json' });
   if (format === 'mspxml') return new Blob([stringifyMspXml(data)], { type: 'application/xml' });
-  if (!adapter) throw new Error('L’export .mpp binaire nécessite un ProjectFileAdapter côté serveur.');
+  if (!adapter) throw new Error('Binary .mpp export requires a server-side ProjectFileAdapter.');
   const result = await adapter.exportMpp(data);
   return result instanceof Blob ? result : new Blob([result], { type: 'application/octet-stream' });
 }
 
 export function normalizeProject(data: GanttData): GanttData {
-  if (!data || !Array.isArray(data.tasks)) throw new Error('Le projet doit contenir un tableau tasks.');
+  if (!data || !Array.isArray(data.tasks)) throw new Error('The project must contain a tasks array.');
   return {
     name: data.name,
     tasks: flattenTasks(buildTaskTree(data.tasks)),
@@ -169,8 +169,14 @@ export function normalizeProject(data: GanttData): GanttData {
   };
 }
 
+function getElementsByLocalName(root: Document | Element, localName: string): Element[] {
+  const namespaced = Array.from(root.getElementsByTagNameNS('*', localName));
+  return namespaced.length ? namespaced : Array.from(root.getElementsByTagName(localName));
+}
+
 function childText(element: Element, localName: string): string {
-  return Array.from(element.children).find(child => child.localName === localName)?.textContent?.trim() || '';
+  return getElementsByLocalName(element, localName)
+    .find(child => child.parentElement === element)?.textContent?.trim() || '';
 }
 
 function toDateOnly(value: string): string | null {

@@ -13,7 +13,7 @@ export function parseDateOnly(value: string | Date): Date {
   }
 
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) throw new Error(`Date invalide: ${value}`);
+  if (Number.isNaN(parsed.getTime())) throw new Error(`Invalid date: ${value}`);
   return new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()));
 }
 
@@ -53,27 +53,38 @@ export function buildTaskTree(tasks: GanttTask[]): GanttTask[] {
   }
 
   const visiting = new Set<string>();
+  const built = new Set<string>();
   const build = (task: GanttTask): GanttTask => {
-    if (visiting.has(task.id)) throw new Error(`Cycle dans la hiérarchie autour de ${task.id}`);
+    if (visiting.has(task.id)) throw new Error(`Hierarchy cycle detected around ${task.id}`);
+    if (built.has(task.id)) return task;
     visiting.add(task.id);
     const children = (childrenByParent.get(task.id) || []).map(build);
     visiting.delete(task.id);
-    if (!children.length) return { ...task, children, collapsed: Boolean(task.collapsed) };
+    if (!children.length) {
+      const leaf = { ...task, children, collapsed: Boolean(task.collapsed) };
+      built.add(task.id);
+      return leaf;
+    }
 
     const childStarts = children.map(child => child.start).sort();
     const childEnds = children.map(child => child.end).sort();
-    return {
+    const branch = {
       ...task,
       start: childStarts[0] || task.start,
       end: childEnds[childEnds.length - 1] || task.end,
       children,
       collapsed: Boolean(task.collapsed),
     };
+    built.add(task.id);
+    return branch;
   };
 
-  return [...byId.values()]
+  const tree = [...byId.values()]
     .filter(task => !task.parentId || !byId.has(task.parentId))
     .map(build);
+  // A circular branch has no root and would otherwise be silently omitted.
+  for (const task of byId.values()) if (!built.has(task.id)) build(task);
+  return tree;
 }
 
 export function flattenTasks(tasks: GanttTask[]): GanttTask[] {
@@ -130,10 +141,10 @@ export function clampProgress(value: number | undefined): number {
   return Math.max(0, Math.min(100, Number.isFinite(value) ? Number(value) : 0));
 }
 
-export function getMonthLabel(date: Date, locale = 'fr-FR'): string {
+export function getMonthLabel(date: Date, locale = 'en-US'): string {
   return date.toLocaleDateString(locale, { month: 'short', year: 'numeric', timeZone: 'UTC' });
 }
 
-export function getDayLabel(date: Date, locale = 'fr-FR'): string {
+export function getDayLabel(date: Date, locale = 'en-US'): string {
   return date.toLocaleDateString(locale, { day: '2-digit', month: '2-digit', timeZone: 'UTC' });
 }

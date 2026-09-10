@@ -14,7 +14,7 @@ export class LocalStorageGanttPersistenceAdapter implements GanttPersistenceAdap
 
   async save(change: GanttChange): Promise<void> {
     const storage = this.storage();
-    if (!storage) throw new Error('localStorage est indisponible dans cet environnement.');
+    if (!storage) throw new Error('localStorage is unavailable in this environment.');
     storage.setItem(this.key(change.projectId || 'default'), JSON.stringify(change.data));
   }
 

@@ -557,7 +557,7 @@ gantt.setOptions({
 
 The user can resize visible columns from their boundaries, open the column picker to hide optional columns, and use the toolbar to expand or collapse all parents.
 
-The bundled demo also includes **Grand exemple · 1 550 tâches**. It generates 50 parent phases, 1,500 work packages, resource assignments, and dependency links in the browser, then displays the load time. It is intended for manual rendering and scrolling checks.
+The bundled demo also includes **Large sample · 1,550 tasks**. It generates 50 parent phases, 1,500 work packages, resource assignments, and dependency links in the browser, then displays the load time. It is intended for manual rendering and scrolling checks.
 
 ### Pan the timeline from empty space
 
@@ -837,11 +837,13 @@ gantt.options = {
 
 ## Calendar, localisation and theme overrides
 
-By default, the component uses the browser locale (`navigator.language`), starts weeks on Monday, and shades Saturday and Sunday. Built-in French and English dictionaries live in [`src/translations.ts`](src/translations.ts); other locales use English as a safe fallback. All built-in visible labels, accessibility names, tooltips, validation/status messages and default menus use this dictionary. Override any label through `translations` when your product needs another language or specific terminology.
+By default, the component uses English (`en-US`), starts weeks on Monday, and shades Saturday and Sunday. Built-in French and English dictionaries live in [`src/translations.ts`](src/translations.ts); other locales use English as a safe fallback. All built-in visible labels, accessibility names, tooltips, validation/status messages and default menus use this dictionary. Set `locale` explicitly when your product needs another language or specific terminology.
+
+The bundled demo includes a **Language** selector for English and French. It changes the page controls, demo-only templates and summaries, then reapplies `options.locale` to the component. Task and resource names are business data and are deliberately not machine-translated; supply localized values from the hosting product when needed.
 
 ```ts
 gantt.options = {
-  locale: navigator.language, // for example: 'fr-FR' or 'en-GB'
+  locale: 'fr-FR', // for example: 'fr-FR' or 'en-GB'
   firstDayOfWeek: 1,          // 0 = Sunday, 1 = Monday, … 6 = Saturday
   showWeekNumbers: true,      // adds a week-number row above the timeline
   weekNumbering: 'first-full-week', // first complete week is W 1; use 'iso' for ISO-8601
@@ -913,6 +915,15 @@ The first-day setting aligns the timeline to complete weeks and draws a subtle d
 ### Resource calendars
 
 Calendars belong to `GanttData`, so they are preserved in JSON, local persistence and custom project-file adapters. A resource selects one through `calendarId`. The resource grid then shades its closed days on that specific row, blocks edits on those dates and spreads a total quantity only across working dates.
+
+The planning and resource panels share the component's available vertical space. On a compact viewport, the planning panel contracts first so the selected task's resources remain visible. Set `resourcesMaxHeight` when an integration needs a different preferred resource-panel height; the horizontal separator remains user-resizable without allowing the resources to disappear.
+
+```ts
+gantt.setOptions({
+  maxHeight: 440,
+  resourcesMaxHeight: 260,
+});
+```
 
 ```ts
 gantt.setData({

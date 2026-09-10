@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -9,37 +9,43 @@
 <body>
   <div id="app">
     <header>
-      <h1>Gantt Chart Component</h1>
-      <p>Reusable Lit Component with parent tasks, drag & drop, and custom colors</p>
+      <h1 data-i18n="ganttTitle">Gantt Chart Component</h1>
+      <p data-i18n="ganttSubtitle">Reusable Lit Component with parent tasks, drag & drop, and custom colors</p>
     </header>
 
     <div class="toolbar">
-      <button id="btn-json">📥 Import JSON</button>
-      <button id="btn-mpp">📥 Import MS Project</button>
-      <button id="btn-sample">📋 Charger Exemple</button>
-      <button id="btn-large-sample">Grand exemple · 1 550 tâches</button>
-      <button id="btn-reset">🔄 Réinitialiser</button>
-      <label class="calendar-control visual-style-control">Style
-        <select id="visual-style" aria-label="Style de démonstration">
+      <button id="btn-json" data-i18n="importJson">📥 Import JSON</button>
+      <button id="btn-mpp" data-i18n="importProject">📥 Import MS Project</button>
+      <button id="btn-sample" data-i18n="loadSample">📋 Load sample</button>
+      <button id="btn-large-sample" data-i18n="largeSample">Large sample · 1,550 tasks</button>
+      <button id="btn-reset" data-i18n="reset">🔄 Reset</button>
+      <label class="calendar-control language-control"><span data-i18n="language">Language</span>
+        <select id="demo-language" aria-label="Language" data-i18n-aria-label="language">
+          <option value="en">English</option>
+          <option value="fr">Français</option>
+        </select>
+      </label>
+      <label class="calendar-control visual-style-control"><span data-i18n="style">Style</span>
+        <select id="visual-style" aria-label="Demo visual style" data-i18n-aria-label="demoVisualStyle">
           <option value="material">Material</option>
           <option value="fluent">Fluent</option>
-          <option value="dark-operations">Opérations sombre</option>
+          <option value="dark-operations" data-i18n="darkOperations">Dark operations</option>
         </select>
       </label>
-      <button id="btn-theme" type="button" aria-pressed="false">Passer au thème sombre</button>
-      <label class="calendar-control">Début de semaine
+      <button id="btn-theme" type="button" aria-pressed="false" data-i18n="switchToDark">Switch to dark theme</button>
+      <label class="calendar-control"><span data-i18n="weekStarts">Week starts</span>
         <select id="week-start">
-          <option value="1">Lundi</option>
-          <option value="0">Dimanche</option>
+          <option value="1" data-i18n="monday">Monday</option>
+          <option value="0" data-i18n="sunday">Sunday</option>
         </select>
       </label>
-      <label class="calendar-control">Numérotation
+      <label class="calendar-control"><span data-i18n="weekNumbering">Week numbering</span>
         <select id="week-numbering">
-          <option value="first-full-week">Première semaine complète</option>
+          <option value="first-full-week" data-i18n="firstFullWeek">First full week</option>
           <option value="iso">ISO-8601</option>
         </select>
       </label>
-      <label class="calendar-control task-row-height-control" for="task-row-height">Hauteur tâches
+      <label class="calendar-control task-row-height-control" for="task-row-height"><span data-i18n="taskRowHeight">Task row height</span>
         <input id="task-row-height" type="range" min="28" max="96" step="1" value="42" />
         <output id="task-row-height-value" for="task-row-height">42 px</output>
       </label>
@@ -49,15 +55,15 @@
 
     <gantt-chart id="gantt" theme="light"></gantt-chart>
 
-    <footer class="project-footer" aria-label="Planning summary" aria-live="polite">
-      <dl><dt>Start</dt><dd id="summary-start">—</dd></dl>
-      <dl><dt>Finish</dt><dd id="summary-end">—</dd></dl>
-      <dl><dt>Duration</dt><dd id="summary-duration">0 days</dd></dl>
-      <dl><dt>Progress</dt><dd id="summary-progress">0%</dd></dl>
-      <dl><dt>Work items</dt><dd id="summary-items">Tasks 0 · Phases 0 · Milestones 0</dd></dl>
-      <dl><dt>Schedule</dt><dd id="summary-schedule">No overdue task</dd></dl>
-      <dl><dt>Costs</dt><dd id="summary-cost">Total 0 € · Actual 0 €</dd></dl>
-      <dl><dt>Resources</dt><dd id="summary-resources">0 · Load 0 / Capacity 0</dd></dl>
+    <footer class="project-footer" aria-label="Planning summary" data-i18n-aria-label="planningSummary" aria-live="polite">
+      <dl><dt data-i18n="start">Start</dt><dd id="summary-start">—</dd></dl>
+      <dl><dt data-i18n="finish">Finish</dt><dd id="summary-end">—</dd></dl>
+      <dl><dt data-i18n="duration">Duration</dt><dd id="summary-duration">0 calendar days · 0 working days</dd></dl>
+      <dl><dt data-i18n="progress">Progress</dt><dd id="summary-progress">0%</dd></dl>
+      <dl><dt data-i18n="workItems">Work items</dt><dd id="summary-items">Tasks 0 · Phases 0 · Milestones 0</dd></dl>
+      <dl><dt data-i18n="schedule">Schedule</dt><dd id="summary-schedule">0 overdue · Next —</dd></dl>
+      <dl><dt data-i18n="costs">Costs</dt><dd id="summary-cost">Total 0 € · Actual 0 €</dd></dl>
+      <dl><dt data-i18n="resources">Resources</dt><dd id="summary-resources">0 · Load 0 / Capacity 0</dd></dl>
     </footer>
 
     <input type="file" id="json-input" accept=".json" style="display:none" />
@@ -65,9 +71,9 @@
 
     <dialog id="loading-dialog" class="loading-dialog" aria-labelledby="loading-title" aria-live="polite">
       <div class="loading-dialog-content">
-        <h2 id="loading-title">Chargement du planning</h2>
-        <p id="loading-description">Préparation des données exemple…</p>
-        <progress aria-label="Chargement en cours"></progress>
+        <h2 id="loading-title" data-i18n="loadingSchedule">Loading schedule</h2>
+        <p id="loading-description" data-i18n="preparingSample">Preparing sample data…</p>
+        <progress aria-label="Loading in progress" data-i18n-aria-label="loadingInProgress"></progress>
       </div>
     </dialog>
   </div>

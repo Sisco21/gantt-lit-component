@@ -9,6 +9,42 @@ import sampleData from './data.json' with { type: 'json' };
 // The bundled fixture is the component's canonical GanttData sample.
 const sampleProject = sampleData as GanttData;
 
+type DemoLanguage = 'en' | 'fr';
+
+const DEMO_UI = {
+  en: {
+    locale: 'en-US', language: 'Language', ganttTitle: 'Gantt Chart Component', ganttSubtitle: 'Reusable Lit Component with parent tasks, drag & drop, and custom colors', importJson: '📥 Import JSON', importProject: '📥 Import MS Project', loadSample: '📋 Load sample', largeSample: 'Large sample · 1,550 tasks', reset: '🔄 Reset',
+    style: 'Style', demoVisualStyle: 'Demo visual style', darkOperations: 'Dark operations', switchToDark: 'Switch to dark theme', switchToLight: 'Switch to light theme', weekStarts: 'Week starts', monday: 'Monday', sunday: 'Sunday', weekNumbering: 'Week numbering', firstFullWeek: 'First full week', taskRowHeight: 'Task row height',
+    start: 'Start', finish: 'Finish', duration: 'Duration', progress: 'Progress', workItems: 'Work items', schedule: 'Schedule', costs: 'Costs', resources: 'Resources', planningSummary: 'Planning summary',
+    loadingSchedule: 'Loading schedule', preparingSample: 'Preparing sample data…', loadingInProgress: 'Loading in progress',
+    calendarDays: 'calendar days', workingDays: 'working days', tasks: 'Tasks', phases: 'Phases', milestones: 'Milestones', overdue: 'overdue', next: 'Next', total: 'Total', actual: 'Actual', load: 'Load', capacity: 'Capacity',
+    weekUpdated: 'Week: {weekStart} — {weekNumbering}', jsonLoaded: 'JSON file loaded: {name}', projectLoaded: 'Project loaded: {name}', invalidJson: 'Invalid JSON file', invalidProject: 'Invalid project file', sampleLoaded: 'Sample data loaded', generatingLarge: 'Generating {count} tasks and their dependencies…', largeLoaded: 'Large sample loaded: {count} tasks in {elapsed} ms', ganttReset: 'Gantt reset', componentReady: 'Gantt component ready', styleApplied: '{style} style applied', deleteConfirm: 'Delete “{name}”?', deleteChildren: 'This will also delete {count} child task{suffix}.',
+    addTaskOn: '＋ Add task on {date}', addPhaseOn: '＋ Add phase on {date}', fitSchedule: 'Fit schedule {date}', close: 'Close', editPhase: '✎ Edit phase', fitPhase: 'Fit phase', addPhaseTask: '＋ Add phase task', deletePhase: 'Delete phase', editTask: '✎ Edit task', setProgress0: 'Set progress to 0%', setProgress50: 'Set progress to 50%', markComplete: 'Mark as complete', fitTask: 'Fit {name}', addTaskAfter: '＋ Add task after', logTask: 'Log task', deleteTask: 'Delete task',
+    daysShort: 'd', days: 'days', cost: 'Cost', actualCost: 'Actual cost', totalCost: 'Total cost', costCoefficient: 'Cost × coefficient', delta: 'Delta', taskName: 'Task name', code: 'Code', name: 'Name', type: 'Type', calendar: 'Calendar', unitPrice: 'PU', quantity: 'Q', totalQuantity: 'Total quantity', coefficient: 'Coefficient', actualCostVariance: 'Actual cost variance',
+  },
+  fr: {
+    locale: 'fr-FR', language: 'Langue', ganttTitle: 'Composant de diagramme de Gantt', ganttSubtitle: 'Composant Lit réutilisable avec tâches parentes, glisser-déposer et couleurs personnalisées', importJson: '📥 Importer JSON', importProject: '📥 Importer MS Project', loadSample: '📋 Charger exemple', largeSample: 'Grand exemple · 1 550 tâches', reset: '🔄 Réinitialiser',
+    style: 'Style', demoVisualStyle: 'Style visuel de la démo', darkOperations: 'Opérations sombres', switchToDark: 'Passer au thème sombre', switchToLight: 'Passer au thème clair', weekStarts: 'Début de semaine', monday: 'Lundi', sunday: 'Dimanche', weekNumbering: 'Numérotation des semaines', firstFullWeek: 'Première semaine complète', taskRowHeight: 'Hauteur des lignes',
+    start: 'Début', finish: 'Fin', duration: 'Durée', progress: 'Avancement', workItems: 'Éléments', schedule: 'Planning', costs: 'Coûts', resources: 'Ressources', planningSummary: 'Récapitulatif du planning',
+    loadingSchedule: 'Chargement du planning', preparingSample: 'Préparation des données exemple…', loadingInProgress: 'Chargement en cours',
+    calendarDays: 'jours calendaires', workingDays: 'jours travaillés', tasks: 'Tâches', phases: 'Phases', milestones: 'Jalons', overdue: 'en retard', next: 'Prochaine', total: 'Total', actual: 'Réel', load: 'Charge', capacity: 'Capacité',
+    weekUpdated: 'Semaine : {weekStart} — {weekNumbering}', jsonLoaded: 'Fichier JSON chargé : {name}', projectLoaded: 'Projet chargé : {name}', invalidJson: 'Fichier JSON invalide', invalidProject: 'Fichier projet invalide', sampleLoaded: 'Exemple chargé', generatingLarge: 'Génération de {count} tâches et de leurs dépendances…', largeLoaded: 'Grand exemple chargé : {count} tâches en {elapsed} ms', ganttReset: 'Gantt réinitialisé', componentReady: 'Composant Gantt prêt', styleApplied: 'Style {style} appliqué', deleteConfirm: 'Supprimer « {name} » ?', deleteChildren: 'Cette action supprimera aussi {count} tâche{suffix} enfant.',
+    addTaskOn: '＋ Ajouter une tâche le {date}', addPhaseOn: '＋ Ajouter une phase le {date}', fitSchedule: 'Ajuster le planning {date}', close: 'Fermer', editPhase: '✎ Modifier la phase', fitPhase: 'Ajuster la phase', addPhaseTask: '＋ Ajouter une tâche de phase', deletePhase: 'Supprimer la phase', editTask: '✎ Modifier la tâche', setProgress0: 'Mettre l’avancement à 0 %', setProgress50: 'Mettre l’avancement à 50 %', markComplete: 'Marquer comme terminée', fitTask: 'Ajuster {name}', addTaskAfter: '＋ Ajouter une tâche après', logTask: 'Journaliser la tâche', deleteTask: 'Supprimer la tâche',
+    daysShort: 'j', days: 'jours', cost: 'Coût', actualCost: 'Coût réel', totalCost: 'Coût total', costCoefficient: 'Coût × coefficient', delta: 'Écart', taskName: 'Nom de la tâche', code: 'Code', name: 'Nom', type: 'Type', calendar: 'Calendrier', unitPrice: 'PU', quantity: 'Q', totalQuantity: 'Quantité totale', coefficient: 'Coefficient', actualCostVariance: 'Écart de coût réel',
+  },
+} as const;
+
+type DemoTextKey = keyof typeof DEMO_UI.en;
+let demoLanguage: DemoLanguage = 'en';
+
+function demoText(key: DemoTextKey, values: Record<string, string | number> = {}): string {
+  return DEMO_UI[demoLanguage][key].replace(/\{(\w+)\}/g, (_match, name: string) => String(values[name] ?? ''));
+}
+
+function getDemoLocale(): string {
+  return DEMO_UI[demoLanguage].locale;
+}
+
 /** Simulates an external resource catalogue. Replace search() with an API call in a real product. */
 const demoResourceCatalogue: GanttResourceReference[] = [
   { id: 'catalogue-worker-qualified', name: 'Qualified worker', type: 'work', unit: 'day', unitCost: 400, maxUnits: 8 },
@@ -28,26 +64,60 @@ function getGantt(): GanttChart | null {
   return document.querySelector('gantt-chart') as GanttChart | null;
 }
 
-function updateProjectFooter(summary: GanttProjectSummary): void {
+type CostVarianceState = 'favorable' | 'unfavorable' | 'neutral';
+
+interface ProjectFooterOptions {
+  costVariance?: Partial<Record<CostVarianceState, { className?: string; icon?: string }>>;
+}
+
+/**
+ * Host-owned footer styling. Replace these class names with classes from the
+ * consuming application; the Gantt component itself does not impose footer CSS.
+ */
+const demoProjectFooterOptions: ProjectFooterOptions = {
+  costVariance: {
+    favorable: { className: 'cost-variance--favorable', icon: '😀' },
+    unfavorable: { className: 'cost-variance--unfavorable', icon: '🙁' },
+    neutral: { className: 'cost-variance--neutral', icon: '•' },
+  },
+};
+
+function updateProjectFooter(summary: GanttProjectSummary, options: ProjectFooterOptions = demoProjectFooterOptions): void {
   const formatDate = (value: string | null) => value
-    ? new Intl.DateTimeFormat(navigator.language, { dateStyle: 'medium' }).format(new Date(`${value}T00:00:00`))
+    ? new Intl.DateTimeFormat(getDemoLocale(), { dateStyle: 'medium' }).format(new Date(`${value}T00:00:00`))
     : '—';
-  const formatCost = new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 });
-  const formatQuantity = new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 });
+  const formatCost = new Intl.NumberFormat(getDemoLocale(), { maximumFractionDigits: 2 });
+  const formatQuantity = new Intl.NumberFormat(getDemoLocale(), { maximumFractionDigits: 2 });
+  const formattedCostVariance = `${formatCost.format(summary.costVariance)} €`;
+  const varianceState: CostVarianceState = summary.costVariance > 0
+    ? 'unfavorable'
+    : summary.costVariance < 0
+      ? 'favorable'
+      : 'neutral';
+  const varianceStyle = options.costVariance?.[varianceState];
+  const varianceIcon = varianceStyle?.icon ?? '';
   const values: Record<string, string> = {
     'summary-start': formatDate(summary.start),
     'summary-end': formatDate(summary.end),
-    'summary-duration': `${summary.durationDays} calendar · ${summary.workingDurationDays} working days`,
+    'summary-duration': `${summary.durationDays} ${demoText('calendarDays')} · ${summary.workingDurationDays} ${demoText('workingDays')}`,
     'summary-progress': `${formatQuantity.format(summary.progress)}%`,
-    'summary-items': `Tasks ${summary.taskCount} · Phases ${summary.phaseCount} · Milestones ${summary.milestoneCount}`,
-    'summary-schedule': `${summary.overdueTaskCount} overdue · Next ${formatDate(summary.nextDueDate)}`,
-    'summary-cost': `Total ${formatCost.format(summary.totalCost)} € · Actual ${formatCost.format(summary.actualCost)} € · Δ ${formatCost.format(summary.costVariance)} €`,
-    'summary-resources': `${summary.resourceCount} · Load ${formatQuantity.format(summary.totalResourceQuantity)} / Capacity ${formatQuantity.format(summary.totalResourceCapacity)}`,
+    'summary-items': `${demoText('tasks')} ${summary.taskCount} · ${demoText('phases')} ${summary.phaseCount} · ${demoText('milestones')} ${summary.milestoneCount}`,
+    'summary-schedule': `${summary.overdueTaskCount} ${demoText('overdue')} · ${demoText('next')} ${formatDate(summary.nextDueDate)}`,
+    'summary-resources': `${summary.resourceCount} · ${demoText('load')} ${formatQuantity.format(summary.totalResourceQuantity)} / ${demoText('capacity')} ${formatQuantity.format(summary.totalResourceCapacity)}`,
   };
   Object.entries(values).forEach(([id, value]) => {
     const output = document.getElementById(id);
-    if (output) output.textContent = value;
+    if (!output) return;
+    output.textContent = value;
   });
+
+  const costOutput = document.getElementById('summary-cost');
+  if (!costOutput) return;
+  costOutput.replaceChildren(document.createTextNode(`${demoText('total')} ${formatCost.format(summary.totalCost)} € · ${demoText('actual')} ${formatCost.format(summary.actualCost)} € · `));
+  const varianceOutput = document.createElement('span');
+  varianceOutput.className = varianceStyle?.className ?? '';
+  varianceOutput.textContent = `${varianceIcon ? `${varianceIcon} ` : ''}${formattedCostVariance}`;
+  costOutput.append(varianceOutput);
 }
 
 function roundQuantity(value: number): number {
@@ -123,7 +193,7 @@ function createLargeDemoProject(): GanttData {
   }
 
   return {
-    name: `Performance sample — ${LARGE_DEMO_TASK_COUNT.toLocaleString('fr-FR')} tasks`,
+    name: `Performance sample — ${LARGE_DEMO_TASK_COUNT.toLocaleString(getDemoLocale())} ${demoText('tasks').toLocaleLowerCase(getDemoLocale())}`,
     tasks,
     dependencies,
     calendars: [{ id: 'weekday', name: 'Weekdays', workingDays: [1, 2, 3, 4, 5] }],
@@ -146,7 +216,7 @@ function costDelta(task: GanttTask): number {
 function formatSignedCost(value: unknown): string {
   const amount = Number(value) || 0;
   const sign = amount > 0 ? '🙁 −' : amount < 0 ? '😀 +' : '';
-  return `${sign}${new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 }).format(Math.abs(amount))} €`;
+  return `${sign}${new Intl.NumberFormat(getDemoLocale(), { maximumFractionDigits: 2 }).format(Math.abs(amount))} €`;
 }
 
 function deltaCellStyle({ value }: GanttColumnRenderContext): string {
@@ -175,10 +245,10 @@ function saveDemoColumnSettings(settings: GanttColumnSettings): void {
 }
 
 /** A host-owned confirmation dialog. Replace with a product dialog or an API permission check. */
-function confirmDemoTaskDeletion({ task, descendants, source }: GanttTaskDeleteContext): boolean {
+function confirmDemoTaskDeletion({ task, descendants }: GanttTaskDeleteContext): boolean {
   const childCount = descendants.length - 1;
-  const children = childCount ? `\n\nThis will also delete ${childCount} child task${childCount === 1 ? '' : 's'}.` : '';
-  return window.confirm(`Delete “${task.name}”?\nSource: ${source}.${children}`);
+  const children = childCount ? `\n\n${demoText('deleteChildren', { count: childCount, suffix: childCount === 1 ? '' : 's' })}` : '';
+  return window.confirm(`${demoText('deleteConfirm', { name: task.name })}${children}`);
 }
 
 /**
@@ -186,7 +256,7 @@ function confirmDemoTaskDeletion({ task, descendants, source }: GanttTaskDeleteC
  * and keep only the options that are useful for that integration.
  */
 const demoOptions: GanttOptions = {
-  locale: navigator.language,
+  locale: getDemoLocale(),
   dayWidth: 30, // Keeps compact custom labels such as "V 16" on one line.
   taskRowHeight: 42,
   // The left grid stays draggable but never uses more than half the browser width.
@@ -219,7 +289,7 @@ const demoOptions: GanttOptions = {
   resourceHeader: {
     dayTemplate: ({ weekdayNarrow, day }) => `${weekdayNarrow.toLocaleUpperCase()} ${day}`,
     zoomLevels: [
-      { maxZoom: .74, dayGrouping: 'week', weekDateTemplate: ({ start, weekNumber }) => `W ${weekNumber}` },
+      { maxZoom: .74, dayGrouping: 'week', weekDateTemplate: ({ weekNumber }) => `W ${weekNumber}` },
       { minZoom: .75, dayGrouping: 'day' },
     ],
   },
@@ -245,12 +315,12 @@ const demoOptions: GanttOptions = {
   showDependencies: true,
   taskEditorMode: 'built-in',
   ganttContextMenuTemplate: ({ fitToView, close, addTask, addPhase, date }) => html`
-    <button @click=${addTask}>＋ Add task on ${date}</button>
-    <button @click=${addPhase}>＋ Add phase on ${date}</button>
+    <button @click=${addTask}>${demoText('addTaskOn', { date })}</button>
+    <button @click=${addPhase}>${demoText('addPhaseOn', { date })}</button>
     <button @click=${() => { fitToView(); close(); }}>
-      Ajuster le planning ${(new Date()).toLocaleString('fr-FR')}
+      ${demoText('fitSchedule', { date: (new Date()).toLocaleString(getDemoLocale()) })}
     </button>
-    <button @click=${close}>Fermer</button>
+    <button @click=${close}>${demoText('close')}</button>
   `,
   // The menu can branch on any task field: here, parents receive a phase menu,
   // while normal tasks receive progress actions. `task.fields` and `task.metadata`
@@ -258,66 +328,66 @@ const demoOptions: GanttOptions = {
   taskContextMenuTemplate: context => {
     const { task, close, edit, addTaskAfter, deleteTask, updateTask, fitToView } = context;
     if (task.type === 'parent') return html`
-      <button role="menuitem" @click=${edit}>✎ Edit phase</button>
-      <button role="menuitem" @click=${() => { fitToView(); close(); }}>Fit phase</button>
-      <button role="menuitem" @click=${addTaskAfter}>＋ Add phase task</button>
-      <button class="danger" role="menuitem" @click=${deleteTask}>Delete phase</button>
+      <button role="menuitem" @click=${edit}>${demoText('editPhase')}</button>
+      <button role="menuitem" @click=${() => { fitToView(); close(); }}>${demoText('fitPhase')}</button>
+      <button role="menuitem" @click=${addTaskAfter}>${demoText('addPhaseTask')}</button>
+      <button class="danger" role="menuitem" @click=${deleteTask}>${demoText('deletePhase')}</button>
     `;
     return html`
-      <button role="menuitem" @click=${edit}>✎ Edit task</button>
+      <button role="menuitem" @click=${edit}>${demoText('editTask')}</button>
       <div class="gantt-context-submenu">
-        <button class="gantt-context-submenu-trigger" role="menuitem" aria-haspopup="menu">Schedule <span aria-hidden="true">›</span></button>
+        <button class="gantt-context-submenu-trigger" role="menuitem" aria-haspopup="menu">${demoText('schedule')} <span aria-hidden="true">›</span></button>
         <div class="gantt-context-submenu-panel" role="menu">
-          <button role="menuitem" @click=${() => { updateTask({ progress: 0 }); close(); }}>Set progress to 0%</button>
-          <button role="menuitem" @click=${() => { updateTask({ progress: 50 }); close(); }}>Set progress to 50%</button>
-          <button role="menuitem" @click=${() => { updateTask({ progress: 100 }); close(); }}>Mark as complete</button>
-          <button role="menuitem" @click=${() => { fitToView(); close(); }}>Fit ${task.name}</button>
+          <button role="menuitem" @click=${() => { updateTask({ progress: 0 }); close(); }}>${demoText('setProgress0')}</button>
+          <button role="menuitem" @click=${() => { updateTask({ progress: 50 }); close(); }}>${demoText('setProgress50')}</button>
+          <button role="menuitem" @click=${() => { updateTask({ progress: 100 }); close(); }}>${demoText('markComplete')}</button>
+          <button role="menuitem" @click=${() => { fitToView(); close(); }}>${demoText('fitTask', { name: task.name })}</button>
         </div>
       </div>
-      <button role="menuitem" @click=${addTaskAfter}>＋ Add task after</button>
-      <button role="menuitem" @click=${() => { console.info('Context task:', task); close(); }}>Log task</button>
-      <button class="danger" role="menuitem" @click=${deleteTask}>Delete task</button>
+      <button role="menuitem" @click=${addTaskAfter}>${demoText('addTaskAfter')}</button>
+      <button role="menuitem" @click=${() => { console.info('Context task:', task); close(); }}>${demoText('logTask')}</button>
+      <button class="danger" role="menuitem" @click=${deleteTask}>${demoText('deleteTask')}</button>
     `;
   },
-  taskTemplate: ({ task, durationDays }) => html`${durationDays} j · ${task.progress}%`,
-  phaseTemplate: ({ task }) => html`${new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 }).format(summaryCostWithCoefficient(task))} €`,
-  milestoneTemplate: ({ task, durationDays }) => html`${task.name}`,
+  taskTemplate: ({ task, durationDays }) => html`${durationDays} ${demoText('daysShort')} · ${task.progress}%`,
+  phaseTemplate: ({ task }) => html`${new Intl.NumberFormat(getDemoLocale(), { maximumFractionDigits: 2 }).format(summaryCostWithCoefficient(task))} €`,
+  milestoneTemplate: ({ task }) => html`${task.name}`,
   // The tooltip receives the original task object, its resolved colour and assigned resources.
   taskTooltipTemplate: ({ task, color, durationDays, resources, kind }) => html`
     <div class="task-tooltip-title"><span class="task-tooltip-accent" style="--tooltip-color:${color}"></span><span>${task.name}</span></div>
     <div class="task-tooltip-details">
-      <span>Duration</span><strong>${durationDays} days</strong>
-      <span>Progress</span><strong>${task.progress}%</strong>
-      <span>Cost</span><strong>${new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 }).format(kind === 'summary' ? summaryCostWithCoefficient(task) : taskCostWithCoefficient(task))} €</strong>
+      <span>${demoText('duration')}</span><strong>${durationDays} ${demoText('days')}</strong>
+      <span>${demoText('progress')}</span><strong>${task.progress}%</strong>
+      <span>${demoText('cost')}</span><strong>${new Intl.NumberFormat(getDemoLocale(), { maximumFractionDigits: 2 }).format(kind === 'summary' ? summaryCostWithCoefficient(task) : taskCostWithCoefficient(task))} €</strong>
     </div>
-    ${resources.length ? html`<div class="task-tooltip-resources"><strong>Resources</strong><span>${resources.map(resource => resource.name).join(', ')}</span></div>` : nothing}
+    ${resources.length ? html`<div class="task-tooltip-resources"><strong>${demoText('resources')}</strong><span>${resources.map(resource => resource.name).join(', ')}</span></div>` : nothing}
   `,
   taskColumns: [
-    { key: 'code', label: 'Code1', width: 64 },
-    { key: 'name', label: 'Task name', width: 230, required: true },
-    { key: 'duration', label: 'Duration', width: 78, type: GanttColumnType.Integer },
-    { key: 'start', label: 'Start', width: 104, type: GanttColumnType.Date },
-    { key: 'end', label: 'Finish', width: 104, type: GanttColumnType.Date },
-    { key: 'costTotal', label: 'Total cost', width: 96, type: GanttColumnType.Decimal },
+    { key: 'code', label: demoText('code'), width: 64 },
+    { key: 'name', label: demoText('taskName'), width: 230, required: true },
+    { key: 'duration', label: demoText('duration'), width: 78, type: GanttColumnType.Integer },
+    { key: 'start', label: demoText('start'), width: 104, type: GanttColumnType.Date },
+    { key: 'end', label: demoText('finish'), width: 104, type: GanttColumnType.Date },
+    { key: 'costTotal', label: demoText('totalCost'), width: 96, type: GanttColumnType.Decimal },
     // Read-only built-in value: the task editor updates task.actualCost.
     {
       key: 'actualCost',
-      label: 'Actual cost',
+      label: demoText('actualCost'),
       width: 108,
       type: GanttColumnType.Decimal,
-      format: value => value === '' ? '—' : `${new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 }).format(Number(value) || 0)} €`,
+      format: value => value === '' ? '—' : `${new Intl.NumberFormat(getDemoLocale(), { maximumFractionDigits: 2 }).format(Number(value) || 0)} €`,
     },
     {
       key: 'costWithCoefficient',
-      label: 'Cost × coefficient',
+      label: demoText('costCoefficient'),
       width: 138,
       type: GanttColumnType.Decimal,
       value: taskCostWithCoefficient,
-      format: value => `${new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 }).format(Number(value) || 0)} €`,
+      format: value => `${new Intl.NumberFormat(getDemoLocale(), { maximumFractionDigits: 2 }).format(Number(value) || 0)} €`,
     },
     {
       key: 'costDelta',
-      label: 'Delta',
+      label: demoText('delta'),
       width: 120,
       type: GanttColumnType.Decimal,
       value: costDelta,
@@ -326,20 +396,20 @@ const demoOptions: GanttOptions = {
       cellTemplate: deltaCellTemplate,
       cellStyle: deltaCellStyle, 
       tooltip: ({ task, formattedValue }) =>
-    `${task.name}\nÉcart coût réel / prévisionnel : ${formattedValue}`,
+    `${task.name}\n${demoText('actualCostVariance')}: ${formattedValue}`,
     },
   ],
   resourceColumns: [
-    { key: 'name', label: 'Name', width: 150, editable: true },
-    { key: 'type', label: 'Type', width: 105, editable: true },
-    { key: 'calendarId', label: 'Calendar', width: 145, editable: true },
-    { key: 'maxUnits', label: 'Capacity', width: 80, type: GanttColumnType.Integer, editable: true },
-    { key: 'unitCost', label: 'PU', width: 75, type: GanttColumnType.Decimal, editable: true },
-    { key: 'quantity', label: 'Q', width: 65, type: GanttColumnType.Integer, editable: true },
-    { key: 'totalQuantity', label: 'Total quantity', width: 90, type: GanttColumnType.Integer, editable: true },
+    { key: 'name', label: demoText('name'), width: 150, editable: true },
+    { key: 'type', label: demoText('type'), width: 105, editable: true },
+    { key: 'calendarId', label: demoText('calendar'), width: 145, editable: true },
+    { key: 'maxUnits', label: demoText('capacity'), width: 80, type: GanttColumnType.Integer, editable: true },
+    { key: 'unitCost', label: demoText('unitPrice'), width: 75, type: GanttColumnType.Decimal, editable: true },
+    { key: 'quantity', label: demoText('quantity'), width: 65, type: GanttColumnType.Integer, editable: true },
+    { key: 'totalQuantity', label: demoText('totalQuantity'), width: 90, type: GanttColumnType.Integer, editable: true },
     {
       key: 'coefficient',
-      label: 'Coefficient',
+      label: demoText('coefficient'),
       width: 84,
       type: GanttColumnType.Decimal,
       min: -100,
@@ -350,16 +420,37 @@ const demoOptions: GanttOptions = {
     },
     {
       key: 'costWithCoefficient',
-      label: 'Cost × coefficient',
+      label: demoText('costCoefficient'),
       width: 138,
       type: GanttColumnType.Decimal,
       value: resourceCostWithCoefficient,
-      format: value => `${new Intl.NumberFormat(navigator.language, { maximumFractionDigits: 2 }).format(Number(value) || 0)} €`,
+      format: value => `${new Intl.NumberFormat(getDemoLocale(), { maximumFractionDigits: 2 }).format(Number(value) || 0)} €`,
     },
   ],
   onTaskSelect: (taskId, task) => console.info('Selected task:', taskId, task),
   onTasksChange: data => console.info('Planning updated:', data),
 };
+
+const taskColumnTranslationKeys: Record<string, DemoTextKey> = {
+  code: 'code', name: 'taskName', duration: 'duration', start: 'start', end: 'finish', costTotal: 'totalCost', actualCost: 'actualCost', costWithCoefficient: 'costCoefficient', costDelta: 'delta',
+};
+
+const resourceColumnTranslationKeys: Record<string, DemoTextKey> = {
+  name: 'name', type: 'type', calendarId: 'calendar', maxUnits: 'capacity', unitCost: 'unitPrice', quantity: 'quantity', totalQuantity: 'totalQuantity', coefficient: 'coefficient', costWithCoefficient: 'costCoefficient',
+};
+
+function getLocalizedDemoOptions(): GanttOptions {
+  const localizeColumns = <T extends { key: string; label: string }>(columns: T[], labels: Record<string, DemoTextKey>): T[] => columns.map(column => ({
+    ...column,
+    label: labels[column.key] ? demoText(labels[column.key]) : column.label,
+  }));
+  return {
+    ...demoOptions,
+    locale: getDemoLocale(),
+    taskColumns: localizeColumns(demoOptions.taskColumns || [], taskColumnTranslationKeys),
+    resourceColumns: localizeColumns(demoOptions.resourceColumns || [], resourceColumnTranslationKeys),
+  };
+}
 
 type VisualStyle = 'material' | 'fluent' | 'dark-operations';
 type DemoTheme = 'light' | 'dark';
@@ -495,7 +586,7 @@ function applyDemoTaskPalette(data: ReturnType<GanttChart['getData']>, colors: N
 function configureDemo(): void {
   const gantt = getGantt();
   if (!gantt) return;
-  gantt.setOptions(demoOptions);
+  gantt.setOptions(getLocalizedDemoOptions());
   const savedColumnSettings = loadDemoColumnSettings();
   if (savedColumnSettings) gantt.setColumnSettings(savedColumnSettings);
   gantt.resourceProvider = demoResourceProvider;
@@ -547,13 +638,13 @@ function applyCalendarOptions(): void {
   const theme = (document.documentElement.dataset.theme || 'light') as DemoTheme;
   const taskColors = getVisualTaskColors(visualStyle, theme);
   gantt.setOptions({
-    ...demoOptions,
+    ...getLocalizedDemoOptions(),
     taskColors,
     dependencyColor: taskColors.dependency,
     firstDayOfWeek: Number(weekStart.value),
     weekNumbering: weekNumbering.value as NonNullable<GanttOptions['weekNumbering']>,
   });
-  showStatus(`Semaine : ${weekStart.selectedOptions[0].text} — ${weekNumbering.selectedOptions[0].text}`, 'success');
+  showStatus(demoText('weekUpdated', { weekStart: weekStart.selectedOptions[0].text, weekNumbering: weekNumbering.selectedOptions[0].text }), 'success');
 }
 
 function showStatus(message: string, type: 'info' | 'error' | 'success' = 'info') {
@@ -573,16 +664,16 @@ function loadJson(file: File): void {
   const gantt = getGantt();
   if (!gantt) return;
   void gantt.importFile(file)
-    .then(() => showStatus(`Fichier JSON chargé : ${file.name}`, 'success'))
-    .catch(error => showStatus(error instanceof Error ? error.message : 'Fichier JSON invalide', 'error'));
+    .then(() => showStatus(demoText('jsonLoaded', { name: file.name }), 'success'))
+    .catch(error => showStatus(error instanceof Error ? error.message : demoText('invalidJson'), 'error'));
 }
 
 function loadProjectFile(file: File): void {
   const gantt = getGantt();
   if (!gantt) return;
   void gantt.importFile(file)
-    .then(() => showStatus(`Projet chargé : ${file.name}`, 'success'))
-    .catch(error => showStatus(error instanceof Error ? error.message : 'Fichier projet invalide', 'error'));
+    .then(() => showStatus(demoText('projectLoaded', { name: file.name }), 'success'))
+    .catch(error => showStatus(error instanceof Error ? error.message : demoText('invalidProject'), 'error'));
 }
 
 document.getElementById('btn-json')?.addEventListener('click', () => {
@@ -593,7 +684,7 @@ document.getElementById('btn-mpp')?.addEventListener('click', () => {
   (document.getElementById('mpp-input') as HTMLInputElement).click();
 });
 
-function setLoading(isLoading: boolean, description = 'Préparation des données exemple…'): void {
+function setLoading(isLoading: boolean, description = demoText('preparingSample')): void {
   const dialog = document.getElementById('loading-dialog') as HTMLDialogElement | null;
   const sampleButton = document.getElementById('btn-sample') as HTMLButtonElement | null;
   const largeSampleButton = document.getElementById('btn-large-sample') as HTMLButtonElement | null;
@@ -624,7 +715,7 @@ async function loadSampleData(): Promise<void> {
     // Demo-only latency: makes the loading state easy to evaluate in an integration.
     await waitForMinimumLoadingTime(loadingStartedAt);
     getGantt()?.setData(structuredClone(sampleProject));
-    showStatus('Données exemple chargées', 'success');
+    showStatus(demoText('sampleLoaded'), 'success');
   } finally {
     setLoading(false);
   }
@@ -636,7 +727,8 @@ document.getElementById('btn-sample')?.addEventListener('click', () => {
 
 async function loadLargeSampleData(): Promise<void> {
   const loadingStartedAt = performance.now();
-  setLoading(true, `Génération de ${LARGE_DEMO_TASK_COUNT.toLocaleString('fr-FR')} tâches et de leurs liens…`);
+  const taskCount = LARGE_DEMO_TASK_COUNT.toLocaleString(getDemoLocale());
+  setLoading(true, demoText('generatingLarge', { count: taskCount }));
   try {
     await waitForLoadingPaint();
     const startedAt = performance.now();
@@ -645,7 +737,7 @@ async function loadLargeSampleData(): Promise<void> {
     await gantt?.updateComplete;
     await waitForMinimumLoadingTime(loadingStartedAt);
     const elapsed = Math.round(performance.now() - startedAt);
-    showStatus(`Grand exemple chargé : ${LARGE_DEMO_TASK_COUNT.toLocaleString('fr-FR')} tâches en ${elapsed} ms`, 'success');
+    showStatus(demoText('largeLoaded', { count: taskCount, elapsed }), 'success');
   } finally {
     setLoading(false);
   }
@@ -657,7 +749,7 @@ document.getElementById('btn-large-sample')?.addEventListener('click', () => {
 
 document.getElementById('btn-reset')?.addEventListener('click', () => {
   getGantt()?.setData({ tasks: [], dependencies: [] });
-  showStatus('Gantt réinitialisé', 'info');
+  showStatus(demoText('ganttReset'), 'info');
 });
 
 function applyGanttVisualStyle(style: VisualStyle, theme: DemoTheme): void {
@@ -670,7 +762,7 @@ function applyGanttVisualStyle(style: VisualStyle, theme: DemoTheme): void {
   const weekNumbering = document.getElementById('week-numbering') as HTMLSelectElement | null;
   const taskColors = getVisualTaskColors(style, theme);
   gantt.setOptions({
-    ...demoOptions,
+    ...getLocalizedDemoOptions(),
     taskColors,
     dependencyColor: taskColors.dependency,
     firstDayOfWeek: Number(weekStart?.value ?? demoOptions.firstDayOfWeek ?? 1),
@@ -688,7 +780,7 @@ function applyTheme(theme: DemoTheme): void {
   applyGanttVisualStyle((document.documentElement.dataset.visualStyle || 'material') as VisualStyle, theme);
   if (button) {
     const dark = theme === 'dark';
-    button.textContent = dark ? 'Passer au thème clair' : 'Passer au thème sombre';
+    button.textContent = dark ? demoText('switchToLight') : demoText('switchToDark');
     button.setAttribute('aria-pressed', String(dark));
   }
 }
@@ -699,10 +791,35 @@ function applyVisualStyle(style: VisualStyle): void {
   applyTheme(currentTheme);
 }
 
+function applyDemoLanguage(language: DemoLanguage): void {
+  demoLanguage = language;
+  document.documentElement.lang = language;
+  document.querySelectorAll<HTMLElement>('[data-i18n]').forEach(element => {
+    const key = element.dataset.i18n as DemoTextKey | undefined;
+    if (key) element.textContent = demoText(key);
+  });
+  document.querySelectorAll<HTMLElement>('[data-i18n-aria-label]').forEach(element => {
+    const key = element.dataset.i18nAriaLabel as DemoTextKey | undefined;
+    if (key) element.setAttribute('aria-label', demoText(key));
+  });
+  const gantt = getGantt();
+  if (gantt) {
+    const visualStyle = (document.documentElement.dataset.visualStyle || 'material') as VisualStyle;
+    const theme = (document.documentElement.dataset.theme || 'light') as DemoTheme;
+    const taskColors = getVisualTaskColors(visualStyle, theme);
+    gantt.setOptions({ ...getLocalizedDemoOptions(), taskColors, dependencyColor: taskColors.dependency });
+    updateProjectFooter(gantt.getProjectSummary());
+  }
+  applyTheme((document.documentElement.dataset.theme || 'light') as DemoTheme);
+}
+
 document.getElementById('btn-theme')?.addEventListener('click', () => {
   applyTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
 });
 
+document.getElementById('demo-language')?.addEventListener('change', event => {
+  applyDemoLanguage((event.target as HTMLSelectElement).value as DemoLanguage);
+});
 document.getElementById('week-start')?.addEventListener('change', applyCalendarOptions);
 document.getElementById('week-numbering')?.addEventListener('change', applyCalendarOptions);
 document.getElementById('task-row-height')?.addEventListener('input', () => applyDemoTaskRowHeight(false));
@@ -710,10 +827,11 @@ document.getElementById('task-row-height')?.addEventListener('change', () => app
 document.getElementById('visual-style')?.addEventListener('change', event => {
   const style = (event.target as HTMLSelectElement).value as VisualStyle;
   applyVisualStyle(style);
-  showStatus(`Style ${style === 'dark-operations' ? 'Opérations sombre' : style === 'fluent' ? 'Fluent' : 'Material'} appliqué`, 'success');
+  showStatus(`${style === 'dark-operations' ? 'Dark operations' : style === 'fluent' ? 'Fluent' : 'Material'} style applied`, 'success');
 });
 
 configureDemo();
+applyDemoLanguage('en');
 applyVisualStyle('material');
 
 document.getElementById('json-input')?.addEventListener('change', event => {
@@ -726,4 +844,4 @@ document.getElementById('mpp-input')?.addEventListener('change', event => {
   if (file) loadProjectFile(file);
 });
 
-showStatus('Composant Gantt prêt', 'success');
+showStatus(demoText('componentReady'), 'success');

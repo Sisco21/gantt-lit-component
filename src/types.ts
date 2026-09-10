@@ -607,7 +607,7 @@ export interface GanttOptions {
   taskGridSplitter?: GanttTaskGridSplitterOptions;
   /** Optional internal scroll height. Omit to let the component grow naturally. */
   maxHeight?: number | string;
-  /** Maximum height of the resource grid before its own vertical scroll appears. */
+  /** Preferred height of the resource grid. It contracts on compact screens while preserving a usable resource row. */
   resourcesMaxHeight?: number | string;
   taskColumns?: GanttColumn[];
   /** Columns shown in the resource grid before the remove action. */
@@ -654,7 +654,7 @@ export interface GanttOptions {
   ganttContextMenuTemplate?: GanttTimelineContextMenuTemplate;
   /** Opens a host-owned modal or drawer when the user selects Add resource. */
   resourcePicker?: GanttResourcePicker;
-  /** IETF locale used for dates, numbers and built-in labels. Defaults to navigator.language. */
+  /** IETF locale used for dates, numbers and built-in labels. Defaults to en-US. */
   locale?: string;
   /** First day of the displayed week. Uses UTC day numbers: 0 = Sunday, 1 = Monday. Defaults to 1. */
   firstDayOfWeek?: number;
