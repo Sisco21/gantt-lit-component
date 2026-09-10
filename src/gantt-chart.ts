@@ -427,8 +427,9 @@ export class GanttChart extends LitElement {
     .task-focus svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.7; }
     .timeline-row { width: 100%; overflow: hidden; background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(var(--day-width) - 1px), var(--gantt-grid-line) calc(var(--day-width) - 1px), var(--gantt-grid-line) var(--day-width)); }
 
-    .today-line { position: absolute; top: var(--timeline-header-height, ${HEADER_HEIGHT}px); bottom: 0; z-index: 3; width: 2px; background: var(--gantt-red); opacity: .75; pointer-events: none; }
-    .today-label { position: absolute; top: 4px; left: 5px; color: var(--gantt-red); font-size: 10px; font-weight: 700; white-space: nowrap; }
+    /* The marker lives inside .timeline-content, below the sticky header. */
+    .today-line { position: absolute; top: 0; bottom: 0; z-index: 3; width: 2px; background: var(--today-color, var(--gantt-red)); opacity: .75; pointer-events: none; }
+    .today-label { position: absolute; top: 4px; left: 5px; color: var(--today-color, var(--gantt-red)); font-size: 10px; font-weight: 700; white-space: nowrap; }
     .task-bar { position: absolute; top: 50%; z-index: 4; height: var(--task-bar-height); border-radius: var(--gantt-bar-radius, 5px); background: var(--bar-color); box-shadow: inset 0 -2px rgb(0 0 0 / 10%); color: #fff; cursor: grab; font-size: 11px; line-height: var(--task-bar-height); overflow: hidden; padding: 0 7px; text-overflow: ellipsis; transform: translateY(-50%); white-space: nowrap; }
     .task-bar:active { cursor: grabbing; }
     .task-bar.selected { outline: 2px solid #1d65c1; outline-offset: 1px; }
@@ -1832,7 +1833,11 @@ export class GanttChart extends LitElement {
     if (this.options.showToday === false) return nothing;
     const x = this.dateToX(formatDate(new Date()), start, dayWidth);
     if (x < 0 || x > totalDays * dayWidth) return nothing;
-    return html`<div class="today-line" style="left:${x}px"><span class="today-label">${this.t('today')}</span></div>`;
+    const todayColor = this.getColors().today;
+    const configuredLabel = this.options.todayLabel;
+    const todayLabel = typeof configuredLabel === 'function' ? configuredLabel() : configuredLabel || this.t('today');
+    const style = todayColor ? `left:${x}px;--today-color:${todayColor}` : `left:${x}px`;
+    return html`<div class="today-line" style=${style}><span class="today-label">${todayLabel}</span></div>`;
   }
 
   private renderNonWorkingDayBands(start: Date, totalDays: number, dayWidth: number) {

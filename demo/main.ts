@@ -550,15 +550,15 @@ const visualGanttLayoutTokens: Record<VisualStyle, Record<string, string>> = {
 };
 
 const visualTaskColors: Record<VisualStyle, NonNullable<GanttOptions['taskColors']>> = {
-  material: { parent: '#6750a4', task: '#4f378b', milestone: '#b3261e', dependency: '#6750a4' },
-  fluent: { parent: '#0078d4', task: '#0f6cbd', milestone: '#d83b01', dependency: '#0078d4' },
-  'dark-operations': { parent: '#79aefa', task: '#48c894', milestone: '#fb7185', dependency: '#c09aff' },
+  material: { parent: '#6750a4', task: '#4f378b', milestone: '#b3261e', dependency: '#6750a4', today: '#b3261e' },
+  fluent: { parent: '#0078d4', task: '#0f6cbd', milestone: '#d83b01', dependency: '#0078d4', today: '#d83b01' },
+  'dark-operations': { parent: '#79aefa', task: '#48c894', milestone: '#fb7185', dependency: '#c09aff', today: '#fb7185' },
 };
 
 const visualDarkTaskColors: Record<VisualStyle, NonNullable<GanttOptions['taskColors']>> = {
-  material: { parent: '#d0bcff', task: '#b69df8', milestone: '#f2b8b5', dependency: '#d0bcff' },
-  fluent: { parent: '#75beff', task: '#4f9fe8', milestone: '#ffb900', dependency: '#75beff' },
-  'dark-operations': { parent: '#79aefa', task: '#48c894', milestone: '#fb7185', dependency: '#c09aff' },
+  material: { parent: '#d0bcff', task: '#b69df8', milestone: '#f2b8b5', dependency: '#d0bcff', today: '#f2b8b5' },
+  fluent: { parent: '#75beff', task: '#4f9fe8', milestone: '#ffb900', dependency: '#75beff', today: '#ffb900' },
+  'dark-operations': { parent: '#79aefa', task: '#48c894', milestone: '#fb7185', dependency: '#c09aff', today: '#fb7185' },
 };
 
 function getVisualTaskColors(style: VisualStyle, theme: DemoTheme): NonNullable<GanttOptions['taskColors']> {

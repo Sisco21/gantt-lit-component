@@ -203,6 +203,12 @@ gantt.setOptions({
   summaryReferenceDate: () => new Date().toISOString().slice(0, 10),
 });
 
+// Customize the Today marker independently from task-bar colours.
+gantt.setOptions({
+  taskColors: { today: '#d83b01' },
+  todayLabel: 'Current day',
+});
+
 gantt.updateTask('task-42', {
   plannedCost: 12_500,
   actualCost: 11_400,

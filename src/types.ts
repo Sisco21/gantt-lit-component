@@ -145,6 +145,7 @@ export interface TaskColors {
   milestone?: string;
   dependency?: string;
   selected?: string;
+  /** Colour of the vertical Today marker and its label. */
   today?: string;
   headerBackground?: string;
   rowBackground?: string;
@@ -637,6 +638,8 @@ export interface GanttOptions {
   maxZoom?: number;
   taskColors?: TaskColors;
   showToday?: boolean;
+  /** Replaces the built-in Today label. A callback is evaluated during rendering. */
+  todayLabel?: string | (() => string);
   showDependencies?: boolean;
   /** Overrides the dependency-line colour without changing other task colours. */
   dependencyColor?: string;
