@@ -340,6 +340,10 @@ export class GanttChart extends LitElement {
     .column-menu small { margin-left: auto; color: var(--gantt-muted); font-size: 10px; }
     .column-menu label > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .column-menu label button { min-width: 24px; min-height: 23px; padding: 0 5px; }
+    .column-menu-range { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 5px 8px; padding: 3px; }
+    .column-menu-range label { grid-column: 1 / -1; min-height: auto; padding: 0; font-weight: 600; }
+    .column-menu-range input { width: 100%; accent-color: var(--gantt-blue); }
+    .column-menu-range output { min-width: 38px; color: var(--gantt-muted); font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; }
     .column-menu-actions { display: flex; justify-content: flex-end; margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--gantt-border); }
 
     .timeline-header { grid-column: 2; grid-row: 1; left: 0; overflow: hidden; }
@@ -362,7 +366,7 @@ export class GanttChart extends LitElement {
     .task-row, .timeline-row {
       position: absolute;
       left: 0;
-      height: ${ROW_HEIGHT}px;
+      height: var(--task-row-height, ${ROW_HEIGHT}px);
       border-bottom: 1px solid var(--gantt-grid-line);
       background-color: var(--gantt-row);
     }
@@ -393,19 +397,19 @@ export class GanttChart extends LitElement {
 
     .today-line { position: absolute; top: var(--timeline-header-height, ${HEADER_HEIGHT}px); bottom: 0; z-index: 3; width: 2px; background: var(--gantt-red); opacity: .75; pointer-events: none; }
     .today-label { position: absolute; top: 4px; left: 5px; color: var(--gantt-red); font-size: 10px; font-weight: 700; white-space: nowrap; }
-    .task-bar { position: absolute; top: 9px; z-index: 4; height: 24px; border-radius: var(--gantt-bar-radius, 5px); background: var(--bar-color); box-shadow: inset 0 -2px rgb(0 0 0 / 10%); color: #fff; cursor: grab; font-size: 11px; line-height: 24px; overflow: hidden; padding: 0 7px; text-overflow: ellipsis; white-space: nowrap; }
+    .task-bar { position: absolute; top: 50%; z-index: 4; height: var(--task-bar-height); border-radius: var(--gantt-bar-radius, 5px); background: var(--bar-color); box-shadow: inset 0 -2px rgb(0 0 0 / 10%); color: #fff; cursor: grab; font-size: 11px; line-height: var(--task-bar-height); overflow: hidden; padding: 0 7px; text-overflow: ellipsis; transform: translateY(-50%); white-space: nowrap; }
     .task-bar:active { cursor: grabbing; }
     .task-bar.selected { outline: 2px solid #1d65c1; outline-offset: 1px; }
-    .task-bar.milestone { width: 17px !important; height: 17px; top: 12px; transform: rotate(45deg); border-radius: 2px; padding: 0; }
-    .milestone-template { position: absolute; top: 10px; z-index: 4; max-width: min(240px, calc(100% - 24px)); overflow: hidden; color: var(--milestone-color); font-size: 11px; font-weight: 700; line-height: 18px; pointer-events: none; text-overflow: ellipsis; white-space: nowrap; }
-    .task-work { position: absolute; top: 9px; z-index: 4; height: 24px; color: #fff; cursor: grab; font-size: 11px; line-height: 24px; }
+    .task-bar.milestone { width: var(--task-milestone-size) !important; height: var(--task-milestone-size); top: 50%; transform: translateY(-50%) rotate(45deg); border-radius: 2px; padding: 0; }
+    .milestone-template { position: absolute; top: 50%; z-index: 4; max-width: min(240px, calc(100% - 24px)); overflow: hidden; color: var(--milestone-color); font-size: 11px; font-weight: 700; line-height: 18px; pointer-events: none; transform: translateY(-50%); text-overflow: ellipsis; white-space: nowrap; }
+    .task-work { position: absolute; top: 50%; z-index: 4; height: var(--task-bar-height); color: #fff; cursor: grab; font-size: 11px; line-height: var(--task-bar-height); transform: translateY(-50%); }
     .task-work:active { cursor: grabbing; }
     .task-work.selected { outline: 2px solid #1d65c1; outline-offset: 1px; }
     .task-work-label { position: absolute; top: 0; right: 7px; left: 7px; z-index: 5; min-width: 0; overflow: hidden; color: #fff; pointer-events: none; text-overflow: ellipsis; text-shadow: 0 1px 1px rgb(15 23 42 / 65%); white-space: nowrap; }
     .task-span { position: absolute; inset: 0; border: 1px dashed var(--bar-color); border-radius: var(--gantt-bar-radius, 5px); background: color-mix(in srgb, var(--bar-color) 18%, transparent); }
-    .task-segment { position: absolute; top: 0; height: 24px; overflow: hidden; border-radius: var(--gantt-bar-radius, 4px); background: var(--bar-color); box-shadow: inset 0 -2px rgb(0 0 0 / 10%); padding: 0 7px; white-space: nowrap; }
+    .task-segment { position: absolute; top: 0; height: 100%; overflow: hidden; border-radius: var(--gantt-bar-radius, 4px); background: var(--bar-color); box-shadow: inset 0 -2px rgb(0 0 0 / 10%); padding: 0 7px; white-space: nowrap; }
     .task-segment-progress { position: absolute; inset: 0 auto 0 0; width: var(--segment-progress); background: rgb(0 0 0 / 22%); pointer-events: none; }
-    .summary-bar { position: absolute; top: 10px; z-index: 4; height: 15px; border-top: 2px solid var(--summary-color, var(--gantt-summary)); color: var(--summary-color, var(--gantt-summary)); cursor: grab; overflow: visible; }
+    .summary-bar { position: absolute; top: 50%; z-index: 4; height: 15px; border-top: 2px solid var(--summary-color, var(--gantt-summary)); color: var(--summary-color, var(--gantt-summary)); cursor: grab; overflow: visible; transform: translateY(-50%); }
     .summary-cap { position: absolute; top: -2px; width: 2px; height: 9px; background: var(--summary-color, var(--gantt-summary)); }
     .summary-cap.start { left: 0; }
     .summary-cap.end { right: 0; }
@@ -601,6 +605,7 @@ export class GanttChart extends LitElement {
   private resourceReferenceLoading = false;
   private resourceReferenceRequest = 0;
   private headerWidthOverride?: number;
+  private taskRowHeightOverride?: number;
   private readonly taskColumnVisibilityOverrides = new Map<string, boolean>();
   private readonly taskColumnWidthOverrides = new Map<string, number>();
   private readonly resourceColumnVisibilityOverrides = new Map<string, boolean>();
@@ -711,6 +716,7 @@ export class GanttChart extends LitElement {
     const range = this.alignRangeToWeeks(getDateRange(flatTasks));
     const totalDays = Math.max(31, diffDays(range.start, range.end) + 1);
     const dayWidth = this.getDayWidth();
+    const taskRowHeight = this.getTaskRowHeight();
     const timelineWidth = totalDays * dayWidth;
     const taskColumnsWidth = this.getColumns().reduce((width, column) => width + this.getColumnWidth(column), 0);
     const taskGridSizing = this.getTaskGridSizing();
@@ -721,7 +727,7 @@ export class GanttChart extends LitElement {
     const currentSearchId = searchResultIds[this.searchResultIndex];
 
     return html`
-      <div class="shell" @click=${this.closeOpenContextMenus} @contextmenu=${this.preventNativeContextMenu} style="--header-width:${this.getHeaderWidth(taskGridSizing)}px; --min-timeline-width:${taskGridSizing.minTimelineWidth}px; --task-columns-width:${taskColumnsWidth}px; --timeline-width:${timelineWidth}px; --day-width:${dayWidth}px; --rows-height:${Math.max(1, visibleTasks.length) * ROW_HEIGHT}px; --timeline-header-height:${this.getTimelineHeaderHeight()}px; --dependency-color:${dependencyColor}; --dependency-line-style:${this.options.dependencyLineStyle || 'solid'}; --gantt-panel-height:${this.getGanttPanelHeight()}; --resources-panel-height:${this.getResourcesPanelHeight()}">
+      <div class="shell" @click=${this.closeOpenContextMenus} @contextmenu=${this.preventNativeContextMenu} style="--header-width:${this.getHeaderWidth(taskGridSizing)}px; --min-timeline-width:${taskGridSizing.minTimelineWidth}px; --task-columns-width:${taskColumnsWidth}px; --timeline-width:${timelineWidth}px; --day-width:${dayWidth}px; --task-row-height:${taskRowHeight}px; --task-bar-height:clamp(18px, calc(${taskRowHeight}px - 18px), 78px); --task-milestone-size:clamp(13px, calc(${taskRowHeight}px - 25px), 36px); --rows-height:${Math.max(1, visibleTasks.length) * taskRowHeight}px; --timeline-header-height:${this.getTimelineHeaderHeight()}px; --dependency-color:${dependencyColor}; --dependency-line-style:${this.options.dependencyLineStyle || 'solid'}; --gantt-panel-height:${this.getGanttPanelHeight()}; --resources-panel-height:${this.getResourcesPanelHeight()}">
         <div class="toolbar">
           <button class="primary" @click=${() => this.chooseImport('.json,.xml,.mpp')}>${this.t('import')}</button>
           <button @click=${() => this.download('json')}>${this.t('exportJson')}</button>
@@ -768,13 +774,13 @@ export class GanttChart extends LitElement {
               <div class="task-header"><div class="task-columns">${this.getColumns().map(column => html`<div class="task-column" style="width:${this.getColumnWidth(column)}px" @dragover=${(event: DragEvent) => this.allowColumnDrop(event, 'task')} @drop=${(event: DragEvent) => this.dropColumn(event, 'task', column.key)}>${this.renderColumnDragHandle('task', column.key, column.label)}<span class="task-column-label">${column.label}</span>${this.canResizeColumns() ? html`<span class="task-column-resizer" role="separator" tabindex="0" aria-label=${this.tFormat('resizeColumn', { column: column.label })} @pointerdown=${(event: PointerEvent) => this.startTaskColumnResize(event, column)}></span>` : nothing}</div>`)}</div></div>
               ${this.renderTimelineHeader(range.start, totalDays, dayWidth)}
               <div class="task-pane" @scroll=${this.syncTaskHeaderScroll}>
-                <div class="task-content" style="height:${Math.max(1, visibleTasks.length) * ROW_HEIGHT}px">
+                <div class="task-content" style="height:${Math.max(1, visibleTasks.length) * taskRowHeight}px">
                   ${visibleTasks.length ? virtualRows.rows.map(({ task, index }) => this.renderTaskRow(task, index, searchMatches, currentSearchId)) : html`<div class="empty">${this.t('noTasks')}</div>`}
                 </div>
               </div>
               <div class="timeline-pane">
                 <div class="timeline-scroll ${this.isGanttPanEnabled() ? 'pan-enabled' : ''}" @scroll=${this.syncTimelineHeaderScroll} @pointerdown=${this.startGanttPan}>
-                  <div class="timeline-content" style="width:${timelineWidth}px; height:${Math.max(1, visibleTasks.length) * ROW_HEIGHT}px" @contextmenu=${this.openTimelineContextMenu}>
+                  <div class="timeline-content" style="width:${timelineWidth}px; height:${Math.max(1, visibleTasks.length) * taskRowHeight}px" @contextmenu=${this.openTimelineContextMenu}>
                     ${this.renderNonWorkingDayBands(range.start, totalDays, dayWidth)}
                     ${this.renderWeekDividers(range.start, totalDays, dayWidth)}
                     ${visibleTasks.length ? virtualRows.rows.map(({ task, index }) => this.renderTimelineRow(task, index, range.start, dayWidth, searchMatches)) : html`<div class="empty">${this.t('noPlanningData')}</div>`}
@@ -838,6 +844,11 @@ export class GanttChart extends LitElement {
   /** Applies view and integration options and immediately refreshes the component. */
   setOptions(options: GanttOptions): void {
     this.options = options;
+  }
+
+  /** Sets the effective task-row height (28–96 px) and persists it through columnSettings.onChange. */
+  setTaskRowHeight(height: number): void {
+    this.updateTaskRowHeight(height, true);
   }
 
   /** Fits the selected task (or an explicit task) horizontally and centres it in the Gantt. */
@@ -1084,7 +1095,8 @@ export class GanttChart extends LitElement {
     const viewport = this.renderRoot.querySelector<HTMLElement>('.gantt-viewport');
     const rowIndex = getVisibleTasks(this.tasks).findIndex(task => task.id === taskId);
     if (!viewport || rowIndex < 0) return;
-    const top = this.getTimelineHeaderHeight() + rowIndex * ROW_HEIGHT - (viewport.clientHeight - ROW_HEIGHT) / 2;
+    const rowHeight = this.getTaskRowHeight();
+    const top = this.getTimelineHeaderHeight() + rowIndex * rowHeight - (viewport.clientHeight - rowHeight) / 2;
     viewport.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
 
     const task = this.findTask(taskId);
@@ -1139,9 +1151,10 @@ export class GanttChart extends LitElement {
   } {
     const overscan = 8;
     // Before the first ResizeObserver callback, render a conservative initial window.
-    const viewportHeight = this.ganttViewport.height || ROW_HEIGHT * 12;
-    const start = Math.max(0, Math.floor(this.ganttViewport.scrollTop / ROW_HEIGHT) - overscan);
-    const end = Math.min(tasks.length, Math.ceil((this.ganttViewport.scrollTop + viewportHeight) / ROW_HEIGHT) + overscan);
+    const rowHeight = this.getTaskRowHeight();
+    const viewportHeight = this.ganttViewport.height || rowHeight * 12;
+    const start = Math.max(0, Math.floor(this.ganttViewport.scrollTop / rowHeight) - overscan);
+    const end = Math.min(tasks.length, Math.ceil((this.ganttViewport.scrollTop + viewportHeight) / rowHeight) + overscan);
     return {
       start,
       end,
@@ -1270,7 +1283,7 @@ export class GanttChart extends LitElement {
     const selected = task.id === this.selectedTaskId;
     const dropPosition = this.taskDropTarget?.taskId === task.id ? this.taskDropTarget.position : '';
     return html`
-      <div class="task-row ${selected ? 'selected' : ''} ${index % 2 ? 'alt' : ''} ${searchMatches.has(task.id) ? 'search-match' : ''} ${task.id === currentSearchId ? 'search-current' : ''} ${dropPosition ? `drop-${dropPosition}` : ''}" style="top:${index * ROW_HEIGHT}px" data-task-id=${task.id}
+      <div class="task-row ${selected ? 'selected' : ''} ${index % 2 ? 'alt' : ''} ${searchMatches.has(task.id) ? 'search-match' : ''} ${task.id === currentSearchId ? 'search-current' : ''} ${dropPosition ? `drop-${dropPosition}` : ''}" style="top:${index * this.getTaskRowHeight()}px" data-task-id=${task.id}
            draggable="true"
            @click=${() => this.focusTaskFromGrid(task.id)}
            @dragstart=${(event: DragEvent) => this.handleDragStart(event, task.id)}
@@ -1688,7 +1701,7 @@ export class GanttChart extends LitElement {
     const color = this.getTaskColor(task);
     const selected = task.id === this.selectedTaskId;
     return html`
-      <div class="timeline-row ${index % 2 ? 'alt' : ''} ${searchMatches.has(task.id) ? 'search-match' : ''}" style="top:${index * ROW_HEIGHT}px">
+      <div class="timeline-row ${index % 2 ? 'alt' : ''} ${searchMatches.has(task.id) ? 'search-match' : ''}" style="top:${index * this.getTaskRowHeight()}px">
         ${this.renderTaskBar(task, left, width, color, selected, start, dayWidth)}
       </div>
     `;
@@ -1917,8 +1930,9 @@ export class GanttChart extends LitElement {
       const fromX = this.dateToX(type === 'start-to-start' || type === 'start-to-finish' ? from.start : this.addDays(from.end, 1), start, dayWidth);
       const toX = this.dateToX(type === 'finish-to-finish' || type === 'start-to-finish' ? this.addDays(to.end, 1) : to.start, start, dayWidth);
       // Les points d'ancrage suivent le centre visuel des barres de tâche.
-      const y1 = fromRow * ROW_HEIGHT + ROW_HEIGHT / 2;
-      const y2 = toRow * ROW_HEIGHT + ROW_HEIGHT / 2;
+      const rowHeight = this.getTaskRowHeight();
+      const y1 = fromRow * rowHeight + rowHeight / 2;
+      const y2 = toRow * rowHeight + rowHeight / 2;
       const targetBarEdgeX = to.type === 'milestone' ? toX - 4 : toX;
       const targetX = Math.max(0, targetBarEdgeX - 8);
       // Deux coudes séparent visuellement le lien de la barre source et de la cible :
@@ -2796,6 +2810,25 @@ export class GanttChart extends LitElement {
   private canResizeColumns(): boolean { return this.isColumnSettingsEnabled() && this.options.columnSettings?.allowResize !== false; }
   private canReorderColumns(): boolean { return this.isColumnSettingsEnabled() && this.options.columnSettings?.allowReorder !== false; }
   private canToggleColumnVisibility(): boolean { return this.isColumnSettingsEnabled() && this.options.columnSettings?.allowVisibility !== false; }
+  private canChangeTaskRowHeight(): boolean { return this.isColumnSettingsEnabled() && this.options.columnSettings?.allowTaskRowHeight !== false; }
+
+  private getTaskRowHeight(): number {
+    const value = Number(this.taskRowHeightOverride ?? this.options.taskRowHeight ?? ROW_HEIGHT);
+    return Number.isFinite(value) ? Math.max(28, Math.min(96, Math.round(value))) : ROW_HEIGHT;
+  }
+
+  private updateTaskRowHeight(height: number, notify: boolean): void {
+    const value = Number(height);
+    if (!Number.isFinite(value)) return;
+    const next = Math.max(28, Math.min(96, Math.round(value)));
+    if (this.taskRowHeightOverride === next) {
+      if (notify) this.notifyColumnSettingsChange();
+      return;
+    }
+    this.taskRowHeightOverride = next;
+    this.requestUpdate();
+    if (notify) this.notifyColumnSettingsChange();
+  }
 
   private orderColumns<T extends { key: string }>(scope: 'task' | 'resource', columns: T[]): T[] {
     const order = scope === 'task' ? this.taskColumnOrder : this.resourceColumnOrder;
@@ -2841,6 +2874,7 @@ export class GanttChart extends LitElement {
     return {
       taskColumns,
       resourceColumns,
+      taskRowHeight: this.getTaskRowHeight(),
     };
   }
 
@@ -2848,6 +2882,7 @@ export class GanttChart extends LitElement {
   setColumnSettings(settings: Partial<GanttColumnSettings>): void {
     this.applyColumnSettings('task', settings.taskColumns, this.getConfiguredColumns());
     this.applyColumnSettings('resource', settings.resourceColumns, this.getConfiguredResourceColumns());
+    if (settings.taskRowHeight !== undefined) this.updateTaskRowHeight(settings.taskRowHeight, false);
     this.requestUpdate();
   }
 
@@ -2859,6 +2894,7 @@ export class GanttChart extends LitElement {
     this.resourceColumnWidthOverrides.clear();
     this.taskColumnOrder = [];
     this.resourceColumnOrder = [];
+    this.taskRowHeightOverride = undefined;
     this.requestUpdate();
     const settings = this.getColumnSettings();
     this.dispatchEvent(new CustomEvent<GanttColumnSettings>('column-settings-reset', { detail: settings, bubbles: true, composed: true }));
@@ -2898,7 +2934,7 @@ export class GanttChart extends LitElement {
 
   private renderColumnDragHandle(scope: 'task' | 'resource', key: string, label: string) {
     if (!this.canReorderColumns()) return nothing;
-    return html`<span class="column-drag-handle" draggable="true" role="img" aria-label=${this.tFormat('reorderColumn', { column: label })} title=${this.tFormat('reorderColumn', { column: label })} @dragstart=${(event: DragEvent) => this.startColumnDrag(event, scope, key)} @dragend=${() => { this.draggedColumn = undefined; }}>
+    return html`<span class="column-drag-handle" draggable="true" aria-hidden="true" title=${this.tFormat('reorderColumn', { column: label })} @dragstart=${(event: DragEvent) => this.startColumnDrag(event, scope, key)} @dragend=${() => { this.draggedColumn = undefined; }}>
       <svg viewBox="0 0 10 14" aria-hidden="true"><circle cx="3" cy="2" r="1.15"></circle><circle cx="7" cy="2" r="1.15"></circle><circle cx="3" cy="7" r="1.15"></circle><circle cx="7" cy="7" r="1.15"></circle><circle cx="3" cy="12" r="1.15"></circle><circle cx="7" cy="12" r="1.15"></circle></svg>
     </span>`;
   }
@@ -2955,6 +2991,11 @@ export class GanttChart extends LitElement {
     if (!this.columnMenuOpen) return nothing;
     return html`<div class="column-menu" @click=${(event: Event) => event.stopPropagation()}>
       <strong>${this.t('columnMenuTitle')}</strong>
+      ${this.canChangeTaskRowHeight() ? html`<section class="column-menu-section column-menu-range">
+        <label for="task-row-height">${this.t('taskRowHeight')}</label>
+        <input id="task-row-height" type="range" min="28" max="96" step="1" .value=${String(this.getTaskRowHeight())} @input=${(event: Event) => this.updateTaskRowHeight(Number((event.target as HTMLInputElement).value), false)} @change=${(event: Event) => this.updateTaskRowHeight(Number((event.target as HTMLInputElement).value), true)} />
+        <output>${this.getTaskRowHeight()} px</output>
+      </section>` : nothing}
       ${this.renderColumnSettingsGroup('task', this.t('taskColumns'), this.getConfiguredColumns())}
       ${this.renderColumnSettingsGroup('resource', this.t('resourceColumns'), this.getConfiguredResourceColumns())}
       <div class="column-menu-actions"><button @click=${this.resetColumnSettings}>${this.t('reset')}</button></div>

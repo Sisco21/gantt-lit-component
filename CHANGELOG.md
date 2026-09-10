@@ -12,6 +12,7 @@ All notable changes to this project are documented in this file.
 - `columnSettings.onChange` and `columnSettings.onReset` hooks, plus `column-settings-changed` and `column-settings-reset` events.
 - Independent column permissions: `allowResize`, `allowReorder` and `allowVisibility`.
 - Hover-only six-dot drag handles and keyboard-accessible order controls in the Columns panel.
+- Configurable task-row height, including a Columns-panel slider and persistence through `GanttColumnSettings.taskRowHeight`.
 - Resource-column numeric types, increments, minimum values and custom metadata-backed columns.
 - Built-in French and English labels for the latest grid and column controls.
 
@@ -19,6 +20,7 @@ All notable changes to this project are documented in this file.
 
 - Improved dark-theme contrast, timeline/resource-grid alignment and Gantt scrolling behaviour.
 - Expanded documentation and demo coverage for external integrations, templates, themes, calendars, headers, tooltips and column settings.
+- Package build now includes TypeScript declaration files and supports Git-based installation through `prepare`.
 
 ### Fixed
 

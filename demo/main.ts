@@ -181,6 +181,7 @@ function saveDemoColumnSettings(settings: GanttColumnSettings): void {
 const demoOptions: GanttOptions = {
   locale: navigator.language,
   dayWidth: 30, // Keeps compact custom labels such as "V 16" on one line.
+  taskRowHeight: 42,
   // The left grid stays draggable but never uses more than half the browser width.
   taskGridSplitter: { minWidth: 260, maxWidth: '55vw', minTimelineWidth: 200 },
   columnSettings: {
@@ -188,6 +189,7 @@ const demoOptions: GanttOptions = {
     allowResize: true,
     allowReorder: true,
     allowVisibility: true,
+    allowTaskRowHeight: true,
     // Called after a resize, visibility or order change in either grid.
     onChange: saveDemoColumnSettings,
     // Called by the Columns > Reset action; a host can delete its saved preferences here.
@@ -486,6 +488,7 @@ function configureDemo(): void {
   const weekNumbering = document.getElementById('week-numbering') as HTMLSelectElement | null;
   if (weekStart) weekStart.value = String(demoOptions.firstDayOfWeek ?? 1);
   if (weekNumbering) weekNumbering.value = demoOptions.weekNumbering ?? 'first-full-week';
+  syncTaskRowHeightControl(gantt.getColumnSettings().taskRowHeight ?? demoOptions.taskRowHeight ?? 42);
   gantt.addEventListener('tasks-changed', event => {
     console.info('Gantt change:', (event as CustomEvent).detail);
   });
@@ -493,7 +496,31 @@ function configureDemo(): void {
   gantt.addEventListener('gantt-summary-changed', event => {
     updateProjectFooter((event as CustomEvent<GanttProjectSummary>).detail);
   });
+  gantt.addEventListener('column-settings-changed', event => {
+    syncTaskRowHeightControl((event as CustomEvent<GanttColumnSettings>).detail.taskRowHeight ?? demoOptions.taskRowHeight ?? 42);
+  });
+  gantt.addEventListener('column-settings-reset', event => {
+    syncTaskRowHeightControl((event as CustomEvent<GanttColumnSettings>).detail.taskRowHeight ?? demoOptions.taskRowHeight ?? 42);
+  });
   updateProjectFooter(gantt.getProjectSummary());
+}
+
+function syncTaskRowHeightControl(height: number): void {
+  const control = document.getElementById('task-row-height') as HTMLInputElement | null;
+  const output = document.getElementById('task-row-height-value') as HTMLOutputElement | null;
+  const value = Math.max(28, Math.min(96, Math.round(Number(height) || 42)));
+  if (control) control.value = String(value);
+  if (output) output.textContent = `${value} px`;
+}
+
+function applyDemoTaskRowHeight(save: boolean): void {
+  const gantt = getGantt();
+  const control = document.getElementById('task-row-height') as HTMLInputElement | null;
+  if (!gantt || !control) return;
+  const height = Number(control.value);
+  if (save) gantt.setTaskRowHeight(height);
+  else gantt.setColumnSettings({ taskRowHeight: height });
+  syncTaskRowHeightControl(height);
 }
 
 function applyCalendarOptions(): void {
@@ -663,6 +690,8 @@ document.getElementById('btn-theme')?.addEventListener('click', () => {
 
 document.getElementById('week-start')?.addEventListener('change', applyCalendarOptions);
 document.getElementById('week-numbering')?.addEventListener('change', applyCalendarOptions);
+document.getElementById('task-row-height')?.addEventListener('input', () => applyDemoTaskRowHeight(false));
+document.getElementById('task-row-height')?.addEventListener('change', () => applyDemoTaskRowHeight(true));
 document.getElementById('visual-style')?.addEventListener('change', event => {
   const style = (event.target as HTMLSelectElement).value as VisualStyle;
   applyVisualStyle(style);

@@ -232,6 +232,8 @@ export interface GanttColumnSetting {
 export interface GanttColumnSettings {
   taskColumns: GanttColumnSetting[];
   resourceColumns: GanttColumnSetting[];
+  /** Height in pixels used by task rows in the Gantt grid and timeline. */
+  taskRowHeight?: number;
 }
 
 /** Hooks called when a user changes or resets the column layout. */
@@ -244,6 +246,8 @@ export interface GanttColumnSettingsOptions {
   allowReorder?: boolean;
   /** Allows visibility checkboxes in the Columns panel. Defaults to true. */
   allowVisibility?: boolean;
+  /** Allows the task-row-height control in the Columns panel. Defaults to true. */
+  allowTaskRowHeight?: boolean;
   /** Persist the complete layout in the host application (local storage, API, user profile, etc.). */
   onChange?: (settings: GanttColumnSettings) => void | Promise<void>;
   /** Remove or replace the host-side saved layout after the user chooses Reset. */
@@ -400,6 +404,7 @@ export interface GanttTranslations {
   columnMenuTitle: string;
   taskColumns: string;
   resourceColumns: string;
+  taskRowHeight: string;
   required: string;
   reset: string;
   mode: string;
@@ -559,6 +564,8 @@ export interface GanttTaskGridSplitterOptions {
 
 export interface GanttOptions {
   headerWidth?: number;
+  /** Default height of each task row in pixels. Clamped between 28 and 96; defaults to 42. */
+  taskRowHeight?: number;
   /** Configures the resizable split between the task grid and the right-side timeline. */
   taskGridSplitter?: GanttTaskGridSplitterOptions;
   /** Optional internal scroll height. Omit to let the component grow naturally. */

@@ -40,6 +40,59 @@ console.info(gantt.version); // "1.1.0"
 
 Dates use `YYYY-MM-DD` strings deliberately. This prevents timezone changes between the browser and backend from shifting tasks by one day.
 
+## Build and distribute the package
+
+`pnpm build` creates the distributable `dist/` directory: the ESM component, its stylesheet, source maps and TypeScript declaration files. The package manifest includes only `dist/`, this README and the changelog.
+
+Before publishing, inspect the exact package contents locally:
+
+```bash
+pnpm build
+npm pack --dry-run
+npm pack
+```
+
+The final command produces an archive such as `gantt-lit-component-1.1.0.tgz`. A consuming application can test that archive before any publication:
+
+```bash
+pnpm add ../path/to/gantt-lit-component-1.1.0.tgz
+```
+
+### Publish to npm
+
+For a public package, use an available package name or a scoped name such as `@sisco21/gantt-lit-component`, update the `name` field in `package.json`, then run:
+
+```bash
+npm login
+pnpm build
+npm publish --access public
+```
+
+Consumers install and register it as follows:
+
+```bash
+pnpm add @sisco21/gantt-lit-component
+```
+
+```ts
+import '@sisco21/gantt-lit-component';
+import type { GanttChart, GanttOptions } from '@sisco21/gantt-lit-component';
+```
+
+### Install directly from GitHub
+
+For an unpublished package, add the repository reference to the consuming application's `package.json`:
+
+```json
+{
+  "dependencies": {
+    "gantt-lit-component": "github:Sisco21/gantt-lit-component#main"
+  }
+}
+```
+
+Then run `pnpm install`. The package `prepare` script builds the distributable files during Git-based installation. Use a version tag rather than `main` for reproducible releases, for example `github:Sisco21/gantt-lit-component#v1.1.0`.
+
 ## Load data
 
 `GanttData` is the canonical format for the component, storage, JSON import/export and project-file adapters.
@@ -625,7 +678,7 @@ const currentLayout = gantt.getColumnSettings();
 gantt.resetColumnSettings();
 ```
 
-`GanttColumnSettings` contains `taskColumns` and `resourceColumns`; each entry has a `key`, `order`, `width` and `visible` value. Unknown column keys are safely ignored, which allows a saved setting to survive a later component upgrade. The component also emits `column-settings-changed` and `column-settings-reset`, both with the layout in `event.detail`.
+`GanttColumnSettings` contains `taskColumns`, `resourceColumns` and `taskRowHeight`; each column entry has a `key`, `order`, `width` and `visible` value. Unknown column keys are safely ignored, which allows a saved setting to survive a later component upgrade. The component also emits `column-settings-changed` and `column-settings-reset`, both with the layout in `event.detail`.
 
 The drag handle (six dots) appears at the left of each configurable header on hover. Set `columnSettings: { enabled: false }` to retain a fixed column layout and hide the Columns control and all column gestures. Each permission can also be disabled independently:
 
@@ -638,6 +691,24 @@ columnSettings: {
 ```
 
 Mark a task or resource column with `required: true` when it must never be hidden.
+
+### Task row height
+
+Set a default row height through the component options. It applies consistently to the task grid, timeline bars (including resource segments and milestones), dependency anchors and virtual scrolling. Valid values are clamped to `28`–`96` pixels.
+
+```ts
+gantt.setOptions({
+  taskRowHeight: 52,
+  columnSettings: {
+    onChange: settings => saveUserSettings(settings),
+  },
+});
+
+// Or change the effective value programmatically. This also calls onChange.
+gantt.setTaskRowHeight(56);
+```
+
+The **Task row height** slider in the Columns panel changes the same value and stores it in `GanttColumnSettings.taskRowHeight`. Set `columnSettings.allowTaskRowHeight: false` to hide that slider while retaining the host-provided `taskRowHeight`.
 
 ### Numeric resource inputs
 

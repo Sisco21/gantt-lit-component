@@ -340,6 +340,18 @@ header p {
   padding: 0 8px;
 }
 
+.task-row-height-control input {
+  width: 104px;
+  accent-color: var(--demo-focus);
+}
+
+.task-row-height-control output {
+  min-width: 38px;
+  color: var(--demo-text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 .visual-style-control {
   margin-left: auto;
 }
