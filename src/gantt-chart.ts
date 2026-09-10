@@ -8,6 +8,8 @@ import {
   GanttChangeReason,
   GanttCalendar,
   GanttColumn,
+  GanttColumnSetting,
+  GanttColumnSettings,
   GanttData,
   GanttDateHeaderTemplate,
   GanttDependency,
@@ -310,15 +312,25 @@ export class GanttChart extends LitElement {
     .task-columns, .task-cells { display: flex; width: max-content; min-width: 100%; }
     .task-columns { height: 100%; align-items: end; padding-bottom: 8px; }
     .task-column, .task-cell { flex: 0 0 auto; overflow: hidden; border-right: 1px solid var(--gantt-grid-line); }
-    .task-column { position: relative; padding: 0 5px; color: var(--gantt-muted); font-size: 10px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+    .task-column { position: relative; display: flex; align-items: center; gap: 3px; padding: 0 5px; color: var(--gantt-muted); font-size: 10px; font-weight: 700; }
+    .task-column-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .column-drag-handle { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 15px; height: 20px; margin-left: -3px; border-radius: 3px; color: var(--gantt-muted); cursor: grab; opacity: 0; pointer-events: none; transition: opacity 160ms ease, color 160ms ease, background-color 160ms ease; }
+    .task-column:hover .column-drag-handle, .task-column:focus-within .column-drag-handle, .resource-column-header:hover .column-drag-handle, .resource-column-header:focus-within .column-drag-handle { opacity: .82; pointer-events: auto; }
+    .column-drag-handle:hover, .column-drag-handle:focus-visible { background: var(--gantt-control-hover); color: var(--gantt-blue); opacity: 1; outline: 1px solid var(--gantt-control-border); outline-offset: 1px; }
+    .column-drag-handle:active { cursor: grabbing; }
+    .column-drag-handle svg { width: 10px; height: 14px; fill: currentColor; }
     .task-column-resizer { position: absolute; top: -8px; right: -3px; z-index: 3; width: 6px; height: 36px; cursor: col-resize; touch-action: none; }
     .task-column-resizer:hover, .task-column-resizer:focus-visible { background: rgb(52 120 212 / 22%); outline: 0; }
     .column-menu-wrapper { position: relative; }
-    .column-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 80; width: 230px; padding: 8px; border: 1px solid var(--gantt-control-border); border-radius: 8px; background: var(--gantt-surface); box-shadow: 0 8px 24px rgb(15 23 42 / 18%); }
+    .column-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 80; width: 292px; max-height: min(440px, 70vh); overflow: auto; padding: 8px; border: 1px solid var(--gantt-control-border); border-radius: 8px; background: var(--gantt-surface); box-shadow: 0 8px 24px rgb(15 23 42 / 18%); }
     .column-menu strong { display: block; margin: 2px 3px 7px; color: inherit; font-size: 12px; }
+    .column-menu-section + .column-menu-section { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--gantt-border); }
+    .column-menu-section > span { display: block; margin: 0 3px 4px; color: var(--gantt-muted); font-size: 10px; font-weight: 700; text-transform: uppercase; }
     .column-menu label { display: flex; align-items: center; gap: 7px; min-height: 27px; padding: 2px 3px; color: inherit; font-size: 12px; }
     .column-menu label.required { color: var(--gantt-muted); }
     .column-menu small { margin-left: auto; color: var(--gantt-muted); font-size: 10px; }
+    .column-menu label > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .column-menu label button { min-width: 24px; min-height: 23px; padding: 0 5px; }
     .column-menu-actions { display: flex; justify-content: flex-end; margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--gantt-border); }
 
     .timeline-header { grid-column: 2; grid-row: 1; left: 0; overflow: hidden; }
@@ -497,6 +509,10 @@ export class GanttChart extends LitElement {
     .resource-day-input:focus { outline: 2px solid #60a5fa; outline-offset: -2px; background: var(--gantt-input-background); }
     .resource-cell { box-sizing: border-box; height: 32px; min-height: 32px; padding: 4px 8px; border-right: 1px solid var(--gantt-grid-line); border-bottom: 1px solid var(--gantt-grid-line); font-size: 11px; }
     .resource-cell.header { background: var(--gantt-header); color: var(--gantt-muted); font-size: 10px; font-weight: 700; }
+    .resource-column-header { position: relative; display: flex; align-items: center; gap: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .resource-column-header .column-drag-handle { height: 21px; }
+    .resource-column-resizer { position: absolute; top: 0; right: -3px; z-index: 3; width: 6px; height: 100%; cursor: col-resize; touch-action: none; }
+    .resource-column-resizer:hover, .resource-column-resizer:focus-visible { background: rgb(52 120 212 / 22%); outline: 0; }
     .resource-cell.resource-action { display: flex; align-items: center; justify-content: center; padding-inline: 4px; }
     .resources-scrollbar-dock { grid-column: 1 / -1; grid-row: 3; display: grid; grid-template-columns: var(--header-width) minmax(var(--min-timeline-width, 160px), 1fr); min-width: 0; height: 18px; border-top: 1px solid var(--gantt-border); background: var(--gantt-header); }
     .resource-horizontal-scroll { min-width: 0; overflow-x: auto; overflow-y: hidden; }
@@ -576,8 +592,13 @@ export class GanttChart extends LitElement {
   private resourceReferenceLoading = false;
   private resourceReferenceRequest = 0;
   private headerWidthOverride?: number;
-  private readonly columnVisibilityOverrides = new Map<string, boolean>();
-  private readonly columnWidthOverrides = new Map<string, number>();
+  private readonly taskColumnVisibilityOverrides = new Map<string, boolean>();
+  private readonly taskColumnWidthOverrides = new Map<string, number>();
+  private readonly resourceColumnVisibilityOverrides = new Map<string, boolean>();
+  private readonly resourceColumnWidthOverrides = new Map<string, number>();
+  private taskColumnOrder: string[] = [];
+  private resourceColumnOrder: string[] = [];
+  private draggedColumn?: { scope: 'task' | 'resource'; key: string };
   private columnMenuOpen = false;
   private searchQuery = '';
   private searchResultIndex = -1;
@@ -709,10 +730,10 @@ export class GanttChart extends LitElement {
           <button class="danger" @click=${this.deleteSelected} ?disabled=${!this.selectedTaskId}>${this.t('delete')}</button>
           <button @click=${this.expandAllParents}>${this.t('expandAll')}</button>
           <button @click=${this.collapseAllParents}>${this.t('collapseAll')}</button>
-          <span class="column-menu-wrapper">
+          ${this.isColumnSettingsEnabled() ? html`<span class="column-menu-wrapper">
             <button @click=${this.toggleColumnMenu} aria-expanded=${this.columnMenuOpen ? 'true' : 'false'}>${this.t('columns')}</button>
             ${this.renderColumnMenu()}
-          </span>
+          </span>` : nothing}
           <span class="search-control" role="search">
             <input type="search" placeholder=${this.t('search')} .value=${this.searchQuery} @input=${this.onSearchInput} @keydown=${this.handleSearchKeydown} aria-label=${this.t('search')} />
             <button aria-label=${this.t('previousResult')} title=${this.t('previousResult')} @click=${() => this.focusSearchResult(-1)} ?disabled=${!searchResultIds.length}>←</button>
@@ -735,7 +756,7 @@ export class GanttChart extends LitElement {
               <div class="gantt-horizontal-scroll" @scroll=${this.syncTimelineGridScroll}><div class="gantt-scroll-spacer timeline"></div></div>
             </div>
             <div class="gantt-layout">
-              <div class="task-header"><div class="task-columns">${this.getColumns().map(column => html`<div class="task-column" style="width:${this.getColumnWidth(column)}px">${column.label}<span class="task-column-resizer" role="separator" tabindex="0" aria-label=${this.tFormat('resizeColumn', { column: column.label })} @pointerdown=${(event: PointerEvent) => this.startTaskColumnResize(event, column)}></span></div>`)}</div></div>
+              <div class="task-header"><div class="task-columns">${this.getColumns().map(column => html`<div class="task-column" style="width:${this.getColumnWidth(column)}px" @dragover=${(event: DragEvent) => this.allowColumnDrop(event, 'task')} @drop=${(event: DragEvent) => this.dropColumn(event, 'task', column.key)}>${this.renderColumnDragHandle('task', column.key, column.label)}<span class="task-column-label">${column.label}</span>${this.canResizeColumns() ? html`<span class="task-column-resizer" role="separator" tabindex="0" aria-label=${this.tFormat('resizeColumn', { column: column.label })} @pointerdown=${(event: PointerEvent) => this.startTaskColumnResize(event, column)}></span>` : nothing}</div>`)}</div></div>
               ${this.renderTimelineHeader(range.start, totalDays, dayWidth)}
               <div class="task-pane" @scroll=${this.syncTaskHeaderScroll}>
                 <div class="task-content" style="height:${Math.max(1, visibleTasks.length) * ROW_HEIGHT}px">
@@ -1301,7 +1322,7 @@ export class GanttChart extends LitElement {
           <div class="resources-body">
             ${resourceHeader.visible ? html`<div class="resource-left-header">
               <div class="resources-grid">
-                ${resourceColumns.map(column => html`<div class="resource-cell header ${this.isNumericColumn(column) ? 'numeric' : ''}" title=${column.label}>${column.label}</div>`)}
+                ${resourceColumns.map(column => html`<div class="resource-cell header resource-column-header ${this.isNumericColumn(column) ? 'numeric' : ''}" title=${column.label} @dragover=${(event: DragEvent) => this.allowColumnDrop(event, 'resource')} @drop=${(event: DragEvent) => this.dropColumn(event, 'resource', column.key)}>${this.renderColumnDragHandle('resource', column.key, column.label)}<span class="task-column-label">${column.label}</span>${this.canResizeColumns() ? html`<span class="resource-column-resizer" role="separator" tabindex="0" aria-label=${this.tFormat('resizeResourceColumn', { column: column.label })} @pointerdown=${(event: PointerEvent) => this.startResourceColumnResize(event, column)}></span>` : nothing}</div>`)}
                 <div class="resource-cell header resource-action"></div>
               </div>
             </div>` : nothing}
@@ -2086,19 +2107,43 @@ export class GanttChart extends LitElement {
   };
 
   private startTaskColumnResize(event: PointerEvent, column: GanttColumn): void {
-    if (event.button !== 0) return;
+    if (!this.canResizeColumns() || event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
     const startX = event.clientX;
     const startWidth = this.getColumnWidth(column);
     const minimum = column.key === 'name' ? 120 : 48;
+    let changed = false;
     const move = (moveEvent: PointerEvent): void => {
-      this.columnWidthOverrides.set(column.key, Math.max(minimum, Math.min(640, startWidth + moveEvent.clientX - startX)));
+      this.taskColumnWidthOverrides.set(column.key, Math.max(minimum, Math.min(640, startWidth + moveEvent.clientX - startX)));
+      changed = true;
       this.requestUpdate();
     };
     const stop = (): void => {
       document.removeEventListener('pointermove', move);
       document.removeEventListener('pointerup', stop);
+      if (changed) this.notifyColumnSettingsChange();
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', stop, { once: true });
+  }
+
+  private startResourceColumnResize(event: PointerEvent, column: GanttResourceColumn): void {
+    if (!this.canResizeColumns() || event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const startX = event.clientX;
+    const startWidth = this.getResourceColumnWidth(column);
+    let changed = false;
+    const move = (moveEvent: PointerEvent): void => {
+      this.resourceColumnWidthOverrides.set(column.key, Math.max(56, Math.min(480, startWidth + moveEvent.clientX - startX)));
+      changed = true;
+      this.requestUpdate();
+    };
+    const stop = (): void => {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', stop);
+      if (changed) this.notifyColumnSettingsChange();
     };
     document.addEventListener('pointermove', move);
     document.addEventListener('pointerup', stop, { once: true });
@@ -2698,15 +2743,15 @@ export class GanttChart extends LitElement {
   }
 
   private getColumns(): GanttColumn[] {
-    return this.getConfiguredColumns().filter(column => this.isColumnVisible(column));
+    return this.orderColumns('task', this.getConfiguredColumns()).filter(column => this.isColumnVisible(column));
   }
 
   private getResourceColumns(): GanttResourceColumn[] {
-    return this.options.resourceColumns?.length ? this.options.resourceColumns : DEFAULT_RESOURCE_COLUMNS;
+    return this.orderColumns('resource', this.getConfiguredResourceColumns()).filter(column => this.isResourceColumnVisible(column));
   }
 
   private getResourceColumnWidth(column: GanttResourceColumn): number {
-    return Math.max(56, Math.min(480, column.width));
+    return this.resourceColumnWidthOverrides.get(column.key) ?? Math.max(56, Math.min(480, column.width));
   }
 
   private getConfiguredColumns(): GanttColumn[] {
@@ -2714,8 +2759,12 @@ export class GanttChart extends LitElement {
     return DEFAULT_TASK_COLUMNS.map(({ labelKey, ...column }) => ({ ...column, label: this.t(labelKey) }));
   }
 
+  private getConfiguredResourceColumns(): GanttResourceColumn[] {
+    return this.options.resourceColumns?.length ? this.options.resourceColumns : DEFAULT_RESOURCE_COLUMNS;
+  }
+
   private getColumnWidth(column: GanttColumn): number {
-    return this.columnWidthOverrides.get(column.key) ?? column.width;
+    return this.taskColumnWidthOverrides.get(column.key) ?? column.width;
   }
 
   private isColumnRequired(column: GanttColumn): boolean {
@@ -2724,7 +2773,29 @@ export class GanttChart extends LitElement {
 
   private isColumnVisible(column: GanttColumn): boolean {
     if (this.isColumnRequired(column)) return true;
-    return this.columnVisibilityOverrides.get(column.key) ?? column.visible !== false;
+    return this.taskColumnVisibilityOverrides.get(column.key) ?? column.visible !== false;
+  }
+
+  private isResourceColumnRequired(column: GanttResourceColumn): boolean { return Boolean(column.required); }
+
+  private isResourceColumnVisible(column: GanttResourceColumn): boolean {
+    if (this.isResourceColumnRequired(column)) return true;
+    return this.resourceColumnVisibilityOverrides.get(column.key) ?? column.visible !== false;
+  }
+
+  private isColumnSettingsEnabled(): boolean { return this.options.columnSettings?.enabled !== false; }
+  private canResizeColumns(): boolean { return this.isColumnSettingsEnabled() && this.options.columnSettings?.allowResize !== false; }
+  private canReorderColumns(): boolean { return this.isColumnSettingsEnabled() && this.options.columnSettings?.allowReorder !== false; }
+  private canToggleColumnVisibility(): boolean { return this.isColumnSettingsEnabled() && this.options.columnSettings?.allowVisibility !== false; }
+
+  private orderColumns<T extends { key: string }>(scope: 'task' | 'resource', columns: T[]): T[] {
+    const order = scope === 'task' ? this.taskColumnOrder : this.resourceColumnOrder;
+    const positions = new Map(order.map((key, index) => [key, index]));
+    return [...columns].sort((left, right) => {
+      const leftPosition = positions.get(left.key) ?? columns.findIndex(column => column.key === left.key);
+      const rightPosition = positions.get(right.key) ?? columns.findIndex(column => column.key === right.key);
+      return leftPosition - rightPosition;
+    });
   }
 
   private toggleColumnMenu = (): void => {
@@ -2732,28 +2803,169 @@ export class GanttChart extends LitElement {
     this.requestUpdate();
   };
 
-  private setColumnVisibility(column: GanttColumn, event: Event): void {
-    if (this.isColumnRequired(column)) return;
-    this.columnVisibilityOverrides.set(column.key, (event.target as HTMLInputElement).checked);
+  private setColumnVisibility(scope: 'task' | 'resource', column: GanttColumn | GanttResourceColumn, event: Event): void {
+    if (!this.canToggleColumnVisibility()) return;
+    const required = scope === 'task'
+      ? this.isColumnRequired(column as GanttColumn)
+      : this.isResourceColumnRequired(column as GanttResourceColumn);
+    if (required) return;
+    const overrides = scope === 'task' ? this.taskColumnVisibilityOverrides : this.resourceColumnVisibilityOverrides;
+    overrides.set(column.key, (event.target as HTMLInputElement).checked);
+    this.requestUpdate();
+    this.notifyColumnSettingsChange();
+  }
+
+  /** Returns the effective, serializable layout of both left-hand grids. */
+  getColumnSettings(): GanttColumnSettings {
+    const taskColumns = this.orderColumns('task', this.getConfiguredColumns()).map((column, order): GanttColumnSetting => ({
+      key: column.key,
+      order,
+      width: this.getColumnWidth(column),
+      visible: this.isColumnVisible(column),
+    }));
+    const resourceColumns = this.orderColumns('resource', this.getConfiguredResourceColumns()).map((column, order): GanttColumnSetting => ({
+      key: column.key,
+      order,
+      width: this.getResourceColumnWidth(column),
+      visible: this.isResourceColumnVisible(column),
+    }));
+    return {
+      taskColumns,
+      resourceColumns,
+    };
+  }
+
+  /** Applies a layout obtained from a host API or a previous getColumnSettings() call. */
+  setColumnSettings(settings: Partial<GanttColumnSettings>): void {
+    this.applyColumnSettings('task', settings.taskColumns, this.getConfiguredColumns());
+    this.applyColumnSettings('resource', settings.resourceColumns, this.getConfiguredResourceColumns());
     this.requestUpdate();
   }
 
-  private resetColumns = (): void => {
-    this.columnVisibilityOverrides.clear();
-    this.columnWidthOverrides.clear();
+  /** Restores configured widths, visibility and order, then calls the optional host reset hook. */
+  resetColumnSettings = (): void => {
+    this.taskColumnVisibilityOverrides.clear();
+    this.taskColumnWidthOverrides.clear();
+    this.resourceColumnVisibilityOverrides.clear();
+    this.resourceColumnWidthOverrides.clear();
+    this.taskColumnOrder = [];
+    this.resourceColumnOrder = [];
     this.requestUpdate();
+    const settings = this.getColumnSettings();
+    this.dispatchEvent(new CustomEvent<GanttColumnSettings>('column-settings-reset', { detail: settings, bubbles: true, composed: true }));
+    this.callColumnSettingsHook(this.options.columnSettings?.onReset, settings);
   };
+
+  private applyColumnSettings<T extends { key: string; width: number; visible?: boolean }>(scope: 'task' | 'resource', settings: GanttColumnSetting[] | undefined, columns: T[]): void {
+    if (!settings) return;
+    const configuredKeys = new Set(columns.map(column => column.key));
+    const ordered = [...settings]
+      .filter(setting => configuredKeys.has(setting.key))
+      .sort((left, right) => left.order - right.order)
+      .map(setting => setting.key);
+    const remaining = columns.map(column => column.key).filter(key => !ordered.includes(key));
+    const visibility = scope === 'task' ? this.taskColumnVisibilityOverrides : this.resourceColumnVisibilityOverrides;
+    const widths = scope === 'task' ? this.taskColumnWidthOverrides : this.resourceColumnWidthOverrides;
+    for (const setting of settings) {
+      if (!configuredKeys.has(setting.key)) continue;
+      visibility.set(setting.key, setting.visible);
+      widths.set(setting.key, Math.max(scope === 'task' && setting.key === 'name' ? 120 : scope === 'resource' ? 56 : 48, Math.min(scope === 'resource' ? 480 : 640, setting.width)));
+    }
+    if (scope === 'task') this.taskColumnOrder = [...ordered, ...remaining];
+    else this.resourceColumnOrder = [...ordered, ...remaining];
+  }
+
+  private notifyColumnSettingsChange(): void {
+    const settings = this.getColumnSettings();
+    this.dispatchEvent(new CustomEvent<GanttColumnSettings>('column-settings-changed', { detail: settings, bubbles: true, composed: true }));
+    this.callColumnSettingsHook(this.options.columnSettings?.onChange, settings);
+  }
+
+  private callColumnSettingsHook(hook: ((settings: GanttColumnSettings) => void | Promise<void>) | undefined, settings: GanttColumnSettings): void {
+    if (!hook) return;
+    try { void Promise.resolve(hook(settings)).catch(error => console.error('Unable to save Gantt column settings.', error)); }
+    catch (error) { console.error('Unable to save Gantt column settings.', error); }
+  }
+
+  private renderColumnDragHandle(scope: 'task' | 'resource', key: string, label: string) {
+    if (!this.canReorderColumns()) return nothing;
+    return html`<span class="column-drag-handle" draggable="true" role="img" aria-label=${this.tFormat('reorderColumn', { column: label })} title=${this.tFormat('reorderColumn', { column: label })} @dragstart=${(event: DragEvent) => this.startColumnDrag(event, scope, key)} @dragend=${() => { this.draggedColumn = undefined; }}>
+      <svg viewBox="0 0 10 14" aria-hidden="true"><circle cx="3" cy="2" r="1.15"></circle><circle cx="7" cy="2" r="1.15"></circle><circle cx="3" cy="7" r="1.15"></circle><circle cx="7" cy="7" r="1.15"></circle><circle cx="3" cy="12" r="1.15"></circle><circle cx="7" cy="12" r="1.15"></circle></svg>
+    </span>`;
+  }
+
+  private startColumnDrag(event: DragEvent, scope: 'task' | 'resource', key: string): void {
+    if (!this.canReorderColumns()) return;
+    this.draggedColumn = { scope, key };
+    event.dataTransfer?.setData('text/plain', `${scope}:${key}`);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+  }
+
+  private allowColumnDrop(event: DragEvent, scope: 'task' | 'resource'): void {
+    if (!this.canReorderColumns() || !this.draggedColumn || this.draggedColumn.scope !== scope) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+  }
+
+  private dropColumn(event: DragEvent, scope: 'task' | 'resource', targetKey: string): void {
+    if (!this.canReorderColumns()) return;
+    event.preventDefault();
+    const dragged = this.draggedColumn;
+    this.draggedColumn = undefined;
+    if (!dragged || dragged.scope !== scope || dragged.key === targetKey) return;
+    const order = scope === 'task'
+      ? this.orderColumns('task', this.getConfiguredColumns()).map(column => column.key)
+      : this.orderColumns('resource', this.getConfiguredResourceColumns()).map(column => column.key);
+    const from = order.indexOf(dragged.key);
+    const to = order.indexOf(targetKey);
+    if (from < 0 || to < 0) return;
+    order.splice(from, 1);
+    order.splice(to, 0, dragged.key);
+    if (scope === 'task') this.taskColumnOrder = order;
+    else this.resourceColumnOrder = order;
+    this.requestUpdate();
+    this.notifyColumnSettingsChange();
+  }
+
+  private moveColumn(scope: 'task' | 'resource', key: string, direction: -1 | 1): void {
+    if (!this.canReorderColumns()) return;
+    const order = scope === 'task'
+      ? this.orderColumns('task', this.getConfiguredColumns()).map(column => column.key)
+      : this.orderColumns('resource', this.getConfiguredResourceColumns()).map(column => column.key);
+    const current = order.indexOf(key);
+    const target = current + direction;
+    if (current < 0 || target < 0 || target >= order.length) return;
+    [order[current], order[target]] = [order[target], order[current]];
+    if (scope === 'task') this.taskColumnOrder = order;
+    else this.resourceColumnOrder = order;
+    this.requestUpdate();
+    this.notifyColumnSettingsChange();
+  }
 
   private renderColumnMenu() {
     if (!this.columnMenuOpen) return nothing;
     return html`<div class="column-menu" @click=${(event: Event) => event.stopPropagation()}>
       <strong>${this.t('columnMenuTitle')}</strong>
-      ${this.getConfiguredColumns().map(column => html`<label class=${this.isColumnRequired(column) ? 'required' : ''}>
-        <input type="checkbox" ?checked=${this.isColumnVisible(column)} ?disabled=${this.isColumnRequired(column)} @change=${(event: Event) => this.setColumnVisibility(column, event)} />
-        <span>${column.label}</span>${this.isColumnRequired(column) ? html`<small>${this.t('required')}</small>` : nothing}
-      </label>`)}
-      <div class="column-menu-actions"><button @click=${this.resetColumns}>${this.t('reset')}</button></div>
+      ${this.renderColumnSettingsGroup('task', this.t('taskColumns'), this.getConfiguredColumns())}
+      ${this.renderColumnSettingsGroup('resource', this.t('resourceColumns'), this.getConfiguredResourceColumns())}
+      <div class="column-menu-actions"><button @click=${this.resetColumnSettings}>${this.t('reset')}</button></div>
     </div>`;
+  }
+
+  private renderColumnSettingsGroup(scope: 'task' | 'resource', title: string, columns: Array<GanttColumn | GanttResourceColumn>) {
+    const ordered = this.orderColumns(scope, columns);
+    return html`<section class="column-menu-section"><span>${title}</span>
+      ${ordered.map((column, index) => {
+        const required = scope === 'task' ? this.isColumnRequired(column as GanttColumn) : this.isResourceColumnRequired(column as GanttResourceColumn);
+        const visible = scope === 'task' ? this.isColumnVisible(column as GanttColumn) : this.isResourceColumnVisible(column as GanttResourceColumn);
+        return html`<label class=${required ? 'required' : ''}>
+          <input type="checkbox" ?checked=${visible} ?disabled=${required || !this.canToggleColumnVisibility()} @change=${(event: Event) => this.setColumnVisibility(scope, column, event)} />
+          <span>${column.label}</span>${required ? html`<small>${this.t('required')}</small>` : nothing}
+          <button aria-label=${this.tFormat('moveColumnEarlier', { column: column.label })} ?disabled=${!this.canReorderColumns() || index === 0} @click=${() => this.moveColumn(scope, column.key, -1)}>←</button>
+          <button aria-label=${this.tFormat('moveColumnLater', { column: column.label })} ?disabled=${!this.canReorderColumns() || index === ordered.length - 1} @click=${() => this.moveColumn(scope, column.key, 1)}>→</button>
+        </label>`;
+      })}
+    </section>`;
   }
 
   private getColumnValue(task: GanttTask, column: GanttColumn): unknown {
@@ -3308,7 +3520,7 @@ export class GanttChart extends LitElement {
 
   private getDayWidth(): number { return (this.options.dayWidth ?? 24) * this.zoom; }
   private getHeaderWidth(sizing = this.getTaskGridSizing()): number {
-    const naturalWidth = this.headerWidthOverride ?? Math.max(this.options.headerWidth ?? 0, this.getColumns().reduce((total, column) => total + column.width, 0));
+    const naturalWidth = this.headerWidthOverride ?? Math.max(this.options.headerWidth ?? 0, this.getColumns().reduce((total, column) => total + this.getColumnWidth(column), 0));
     return Math.max(sizing.minWidth, Math.min(sizing.maxWidth, naturalWidth));
   }
   private getTaskGridSizing(): { minWidth: number; maxWidth: number; minTimelineWidth: number } {

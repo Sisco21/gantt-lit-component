@@ -207,12 +207,47 @@ export interface GanttResourceColumn {
   /** Numeric input increment. Use `any` for arbitrary decimal values. */
   step?: number | 'any';
   editable?: boolean;
+  /** A required column stays visible in the column picker. */
+  required?: boolean;
+  /** Set to false to hide a resource column initially while keeping it available in the picker. */
+  visible?: boolean;
   /** Computes a display value with access to both the assignment and its task. */
   value?: (resource: GanttResource, task: GanttTask) => unknown;
   /** Formats the computed or built-in value for display. */
   format?: (value: unknown, resource: GanttResource, task: GanttTask) => string;
   /** Maps an edited custom-cell value back to the resource assignment. */
   setValue?: (value: string, resource: GanttResource, task: GanttTask) => Partial<GanttResource> | void;
+}
+
+/** Serializable layout of one column, suitable for a host application's settings API. */
+export interface GanttColumnSetting {
+  key: string;
+  /** Zero-based position within its grid. */
+  order: number;
+  width: number;
+  visible: boolean;
+}
+
+/** Complete user-adjustable layout of the task and resource grids. */
+export interface GanttColumnSettings {
+  taskColumns: GanttColumnSetting[];
+  resourceColumns: GanttColumnSetting[];
+}
+
+/** Hooks called when a user changes or resets the column layout. */
+export interface GanttColumnSettingsOptions {
+  /** Shows the Columns control and enables its user interactions. Defaults to true. */
+  enabled?: boolean;
+  /** Allows resize handles on task and resource column headers. Defaults to true. */
+  allowResize?: boolean;
+  /** Allows drag-and-drop and arrow-button column reordering. Defaults to true. */
+  allowReorder?: boolean;
+  /** Allows visibility checkboxes in the Columns panel. Defaults to true. */
+  allowVisibility?: boolean;
+  /** Persist the complete layout in the host application (local storage, API, user profile, etc.). */
+  onChange?: (settings: GanttColumnSettings) => void | Promise<void>;
+  /** Remove or replace the host-side saved layout after the user chooses Reset. */
+  onReset?: (settings: GanttColumnSettings) => void | Promise<void>;
 }
 
 /** Renders the label displayed on a parent-task summary bar. Strings and Lit templates are supported. */
@@ -363,6 +398,8 @@ export interface GanttTranslations {
   noLink: string;
   addPredecessor: string;
   columnMenuTitle: string;
+  taskColumns: string;
+  resourceColumns: string;
   required: string;
   reset: string;
   mode: string;
@@ -373,6 +410,10 @@ export interface GanttTranslations {
   invalidJson: string;
   ganttHorizontalScroll: string;
   resizeColumn: string;
+  resizeResourceColumn: string;
+  moveColumnEarlier: string;
+  moveColumnLater: string;
+  reorderColumn: string;
   resizeTaskGrid: string;
   resizeResourceGrid: string;
   toggleTask: string;
@@ -527,6 +568,8 @@ export interface GanttOptions {
   taskColumns?: GanttColumn[];
   /** Columns shown in the resource grid before the remove action. */
   resourceColumns?: GanttResourceColumn[];
+  /** User-customizable column order, visibility and width for both grids. */
+  columnSettings?: GanttColumnSettingsOptions;
   /** Extra content appended after the task name inside the summary bar of parent tasks. */
   summaryTemplate?: GanttSummaryTemplate;
   /** Extra content appended after the task name inside task and parent summary bars. */

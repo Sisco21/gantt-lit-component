@@ -2,7 +2,7 @@ import { html, nothing } from 'lit';
 import '../src/gantt-chart';
 import type { GanttChart } from '../src/gantt-chart';
 import { GanttColumnType } from '../src/types';
-import type { GanttColumnRenderContext, GanttData, GanttOptions, GanttProjectSummary, GanttResource, GanttResourceProvider, GanttResourceReference, GanttTask } from '../src/types';
+import type { GanttColumnRenderContext, GanttColumnSettings, GanttData, GanttOptions, GanttProjectSummary, GanttResource, GanttResourceProvider, GanttResourceReference, GanttTask } from '../src/types';
 import sampleData from './data.json' with { type: 'json' };
 
 // JSON module imports widen literal values (for example, `type`) to `string`.
@@ -159,6 +159,21 @@ function deltaCellTemplate({ formattedValue }: GanttColumnRenderContext) {
   return html`<span style="display:inline-flex; align-items:center; justify-content:flex-end; min-width:0; white-space:nowrap">${formattedValue}</span>`;
 }
 
+const DEMO_COLUMN_SETTINGS_KEY = 'gantt-demo:column-settings';
+
+/** In production, replace these two calls with your user-settings API. */
+function loadDemoColumnSettings(): GanttColumnSettings | undefined {
+  try {
+    const stored = localStorage.getItem(DEMO_COLUMN_SETTINGS_KEY);
+    return stored ? JSON.parse(stored) as GanttColumnSettings : undefined;
+  } catch { return undefined; }
+}
+
+function saveDemoColumnSettings(settings: GanttColumnSettings): void {
+  try { localStorage.setItem(DEMO_COLUMN_SETTINGS_KEY, JSON.stringify(settings)); }
+  catch { /* Demo persistence is optional (for example, unavailable in private browsing). */ }
+}
+
 /**
  * Example of host-level configuration. Copy this object into another project
  * and keep only the options that are useful for that integration.
@@ -168,6 +183,16 @@ const demoOptions: GanttOptions = {
   dayWidth: 30, // Keeps compact custom labels such as "V 16" on one line.
   // The left grid stays draggable but never uses more than half the browser width.
   taskGridSplitter: { minWidth: 260, maxWidth: '55vw', minTimelineWidth: 200 },
+  columnSettings: {
+    // These three permissions can be disabled independently by an integrating application.
+    allowResize: true,
+    allowReorder: true,
+    allowVisibility: true,
+    // Called after a resize, visibility or order change in either grid.
+    onChange: saveDemoColumnSettings,
+    // Called by the Columns > Reset action; a host can delete its saved preferences here.
+    onReset: () => { try { localStorage.removeItem(DEMO_COLUMN_SETTINGS_KEY); } catch { /* Optional demo storage. */ } },
+  },
   firstDayOfWeek: 1, // Monday
   showWeekNumbers: true,
   weekNumbering: 'iso', //'first-full-week', // Microsoft Project-like convention
@@ -454,6 +479,8 @@ function configureDemo(): void {
   const gantt = getGantt();
   if (!gantt) return;
   gantt.setOptions(demoOptions);
+  const savedColumnSettings = loadDemoColumnSettings();
+  if (savedColumnSettings) gantt.setColumnSettings(savedColumnSettings);
   gantt.resourceProvider = demoResourceProvider;
   const weekStart = document.getElementById('week-start') as HTMLSelectElement | null;
   const weekNumbering = document.getElementById('week-numbering') as HTMLSelectElement | null;

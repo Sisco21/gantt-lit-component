@@ -586,6 +586,55 @@ gantt.options = {
 
 For a custom resource column, omit `setValue` to make it read-only. With `editable: true` and no `setValue`, the component stores the typed value in `resource.metadata[column.key]`.
 
+### User-managed column layout (order, width and visibility)
+
+Both the task grid and the resource grid support column resizing, drag-and-drop reordering, visibility toggles and keyboard-accessible left/right buttons in the **Columns** panel. The component exposes a complete serializable layout, so the host can persist it in local storage, a user profile, or an API.
+
+```ts
+import type { GanttColumnSettings } from 'gantt-lit-component';
+
+gantt.setOptions({
+  columnSettings: {
+    // Called after the user changes a width, order or visibility in either grid.
+    onChange: async (settings: GanttColumnSettings) => {
+      await fetch(`/api/user-settings/${currentUser.id}/gantt-columns`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+    },
+    // Called after Columns > Reset. Delete the saved layout here.
+    onReset: async () => {
+      await fetch(`/api/user-settings/${currentUser.id}/gantt-columns`, { method: 'DELETE' });
+    },
+  },
+});
+
+// Apply the saved layout after the component options and columns are configured.
+const saved = await fetch(`/api/user-settings/${currentUser.id}/gantt-columns`).then(response =>
+  response.ok ? response.json() as Promise<GanttColumnSettings> : undefined,
+);
+if (saved) gantt.setColumnSettings(saved);
+
+// Public methods are also useful for a host-owned Reset button.
+const currentLayout = gantt.getColumnSettings();
+gantt.resetColumnSettings();
+```
+
+`GanttColumnSettings` contains `taskColumns` and `resourceColumns`; each entry has a `key`, `order`, `width` and `visible` value. Unknown column keys are safely ignored, which allows a saved setting to survive a later component upgrade. The component also emits `column-settings-changed` and `column-settings-reset`, both with the layout in `event.detail`.
+
+The drag handle (six dots) appears at the left of each configurable header on hover. Set `columnSettings: { enabled: false }` to retain a fixed column layout and hide the Columns control and all column gestures. Each permission can also be disabled independently:
+
+```ts
+columnSettings: {
+  allowResize: true,
+  allowReorder: false,   // hides the six-dot handle and disables the arrow buttons
+  allowVisibility: false, // shows checked columns but makes their checkboxes read-only
+}
+```
+
+Mark a task or resource column with `required: true` when it must never be hidden.
+
 ### Numeric resource inputs
 
 Editable resource columns use the `GanttColumnType` enum. `string` (or the legacy `text`), `integer`, `decimal`, and `number` remain accepted as strings for compatibility. Use `step` and `min` when the default input rule does not match the business value.
