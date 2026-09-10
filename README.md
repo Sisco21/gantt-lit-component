@@ -32,6 +32,10 @@ Use it in HTML or create it from TypeScript:
 
 ```ts
 const gantt = document.querySelector('gantt-chart') as GanttChart;
+
+// Useful in diagnostics, telemetry and support tickets.
+console.info(GanttChart.version); // "1.1.0"
+console.info(gantt.version); // "1.1.0"
 ```
 
 Dates use `YYYY-MM-DD` strings deliberately. This prevents timezone changes between the browser and backend from shifting tasks by one day.

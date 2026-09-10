@@ -1,6 +1,6 @@
 {
   "name": "gantt-lit-component",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Reusable Gantt chart component built with Lit Components and TypeScript",
   "type": "module",
   "main": "dist/gantt-chart.js",
@@ -15,7 +15,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "dev": "vite",

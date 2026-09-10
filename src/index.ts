@@ -1,5 +1,5 @@
 // Main export - re-export everything from the component
-export { GanttChart } from './gantt-chart';
+export { GanttChart, GANTT_COMPONENT_VERSION } from './gantt-chart';
 export * from './types';
 export * from './utils';
 export * from './project-codecs';

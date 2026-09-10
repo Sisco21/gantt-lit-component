@@ -49,6 +49,9 @@ import { getBuiltInTranslations } from './translations';
 const ROW_HEIGHT = 42;
 const HEADER_HEIGHT = 58;
 
+/** Public component version. Keep this aligned with package.json. */
+export const GANTT_COMPONENT_VERSION = '1.1.0';
+
 type DefaultTaskColumn = Omit<GanttColumn, 'label'> & { labelKey: keyof GanttTranslations };
 
 const DEFAULT_TASK_COLUMNS: DefaultTaskColumn[] = [
@@ -77,6 +80,12 @@ const DEFAULT_RESOURCE_COLUMNS: GanttResourceColumn[] = [
  * are deliberately adapters so applications can choose where the data lives.
  */
 export class GanttChart extends LitElement {
+  /** Version of the installed Gantt component package. */
+  static readonly version = GANTT_COMPONENT_VERSION;
+
+  /** Version exposed on the custom-element instance for diagnostics and support. */
+  get version(): string { return GANTT_COMPONENT_VERSION; }
+
   static properties = {
     data: { type: String },
     taskColors: { attribute: 'task-colors', type: String },
