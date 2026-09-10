@@ -17,6 +17,7 @@ import {
   GanttPersistenceAdapter,
   GanttResource,
   GanttResourceColumn,
+  GanttResourceColumnRenderContext,
   GanttResourceProvider,
   GanttResourceReference,
   GanttProjectSummary,
@@ -1305,10 +1306,11 @@ export class GanttChart extends LitElement {
     const tone = column.tone?.(value, task);
     const formattedValue = this.formatColumnValue(value, column, task);
     const context = { task, value, formattedValue };
+    const tooltip = this.getTaskColumnTooltip(column, context);
     const customStyle = !isName ? column.cellStyle?.(context)?.trim() : '';
     const cellStyle = `width:${this.getColumnWidth(column)}px${customStyle ? `;${customStyle}` : ''}`;
     return html`
-      <div class="task-cell ${isName ? 'name' : ''} ${isNumber ? 'number' : ''} ${hasChildren || isPhase ? 'parent' : ''} ${tone ? `tone-${tone}` : ''}" style=${cellStyle} title=${value === null || value === undefined ? '' : String(value)}>
+      <div class="task-cell ${isName ? 'name' : ''} ${isNumber ? 'number' : ''} ${hasChildren || isPhase ? 'parent' : ''} ${tone ? `tone-${tone}` : ''}" style=${cellStyle} title=${ifDefined(tooltip)}>
         ${isName ? html`
           <button class="toggle" style="left:${2 + depth * 16}px" ?disabled=${!hasChildren} @click=${(event: Event) => { event.stopPropagation(); this.toggleTask(task.id); }} aria-label=${this.t('toggleTask')} aria-expanded=${ifDefined(hasChildren ? (task.collapsed ? 'false' : 'true') : undefined)}>
             ${hasChildren ? task.collapsed ? '▶' : '▼' : '·'}
@@ -1389,19 +1391,22 @@ export class GanttChart extends LitElement {
   private renderResourceCell(task: GanttTask, resource: GanttResource, column: GanttResourceColumn) {
     const value = this.getResourceColumnValue(task, resource, column);
     const numeric = this.isNumericColumn(column);
+    const formattedValue = this.formatResourceColumnValue(value, column, resource, task);
+    const context: GanttResourceColumnRenderContext = { resource, task, value, formattedValue };
+    const tooltip = this.getResourceColumnTooltip(column, context);
     if (column.key === 'totalQuantity') {
-      return html`<div class="resource-cell total"><input type="number" min=${ifDefined(this.getResourceColumnMin(column))} .step=${this.getResourceColumnStepProperty(column)} value=${value ?? 0} title=${this.t('totalQuantity')} aria-label="${this.t('totalQuantity')} ${resource.name}" @change=${(event: Event) => this.distributeResourceTotal(task.id, resource.id, (event.target as HTMLInputElement).value)} /></div>`;
+      return html`<div class="resource-cell total"><input type="number" min=${ifDefined(this.getResourceColumnMin(column))} .step=${this.getResourceColumnStepProperty(column)} value=${value ?? 0} title=${ifDefined(tooltip)} aria-label="${this.t('totalQuantity')} ${resource.name}" @change=${(event: Event) => this.distributeResourceTotal(task.id, resource.id, (event.target as HTMLInputElement).value)} /></div>`;
     }
     if (column.key === 'calendarId' && column.editable) {
-      return html`<div class="resource-cell"><select .value=${resource.calendarId || ''} aria-label=${this.tFormat('resourceCalendarFor', { name: resource.name })} @change=${(event: Event) => this.updateResource(task.id, resource.id, 'calendarId', (event.target as HTMLSelectElement).value || undefined)}><option value="">${this.t('resource')}</option>${this.calendars.map(calendar => html`<option value=${calendar.id}>${calendar.name}</option>`)}</select></div>`;
+      return html`<div class="resource-cell"><select .value=${resource.calendarId || ''} title=${ifDefined(tooltip)} aria-label=${this.tFormat('resourceCalendarFor', { name: resource.name })} @change=${(event: Event) => this.updateResource(task.id, resource.id, 'calendarId', (event.target as HTMLSelectElement).value || undefined)}><option value="">${this.t('resource')}</option>${this.calendars.map(calendar => html`<option value=${calendar.id}>${calendar.name}</option>`)}</select></div>`;
     }
     if (column.editable && ['name', 'type', 'unitCost', 'quantity'].includes(column.key)) {
-      return html`<div class="resource-cell ${numeric ? 'numeric' : ''}"><input type=${numeric ? 'number' : 'text'} min=${ifDefined(this.getResourceColumnMin(column))} .step=${this.getResourceColumnStepProperty(column)} .value=${String(value ?? '')} @change=${(event: Event) => this.updateResourceColumn(task, resource, column, (event.target as HTMLInputElement).value)} /></div>`;
+      return html`<div class="resource-cell ${numeric ? 'numeric' : ''}"><input type=${numeric ? 'number' : 'text'} min=${ifDefined(this.getResourceColumnMin(column))} .step=${this.getResourceColumnStepProperty(column)} .value=${String(value ?? '')} title=${ifDefined(tooltip)} @change=${(event: Event) => this.updateResourceColumn(task, resource, column, (event.target as HTMLInputElement).value)} /></div>`;
     }
     if (column.editable) {
-      return html`<div class="resource-cell ${numeric ? 'numeric' : ''}"><input type=${numeric ? 'number' : 'text'} min=${ifDefined(this.getResourceColumnMin(column))} .step=${this.getResourceColumnStepProperty(column)} .value=${String(value ?? '')} @change=${(event: Event) => this.updateResourceColumn(task, resource, column, (event.target as HTMLInputElement).value)} /></div>`;
+      return html`<div class="resource-cell ${numeric ? 'numeric' : ''}"><input type=${numeric ? 'number' : 'text'} min=${ifDefined(this.getResourceColumnMin(column))} .step=${this.getResourceColumnStepProperty(column)} .value=${String(value ?? '')} title=${ifDefined(tooltip)} @change=${(event: Event) => this.updateResourceColumn(task, resource, column, (event.target as HTMLInputElement).value)} /></div>`;
     }
-    return html`<div class="resource-cell ${numeric ? 'numeric' : ''}">${this.formatResourceColumnValue(value, column, resource, task)}</div>`;
+    return html`<div class="resource-cell ${numeric ? 'numeric' : ''}" title=${ifDefined(tooltip)}>${formattedValue}</div>`;
   }
 
   private getResourceColumnValue(task: GanttTask, resource: GanttResource, column: GanttResourceColumn): unknown {
@@ -1424,6 +1429,16 @@ export class GanttChart extends LitElement {
     if (column.format) return column.format(value, resource, task);
     if (this.isNumericColumn(column) && typeof value === 'number') return `${this.formatNumber(value)}${column.key === 'cost' ? ' €' : ''}`;
     return String(value);
+  }
+
+  private getTaskColumnTooltip(column: GanttColumn, context: { task: GanttTask; value: unknown; formattedValue: string }): string | undefined {
+    if (column.tooltip === false) return undefined;
+    return column.tooltip ? column.tooltip(context) : context.formattedValue;
+  }
+
+  private getResourceColumnTooltip(column: GanttResourceColumn, context: GanttResourceColumnRenderContext): string | undefined {
+    if (column.tooltip === false) return undefined;
+    return column.tooltip ? column.tooltip(context) : context.formattedValue;
   }
 
   private isNumericColumn(column: { type?: string }): boolean {

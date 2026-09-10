@@ -311,7 +311,9 @@ const demoOptions: GanttOptions = {
       format: formatSignedCost,
       tone: value => Number(value) < 0 ? 'positive' : 'negative',
       cellTemplate: deltaCellTemplate,
-      cellStyle: deltaCellStyle,
+      cellStyle: deltaCellStyle, 
+      tooltip: ({ task, formattedValue }) =>
+    `${task.name}\nÉcart coût réel / prévisionnel : ${formattedValue}`,
     },
   ],
   resourceColumns: [

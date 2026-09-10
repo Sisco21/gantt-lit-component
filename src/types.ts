@@ -171,6 +171,14 @@ export interface GanttColumnRenderContext {
   formattedValue: string;
 }
 
+/** Context supplied when producing a tooltip for a resource-grid cell. */
+export interface GanttResourceColumnRenderContext {
+  resource: GanttResource;
+  task: GanttTask;
+  value: unknown;
+  formattedValue: string;
+}
+
 export interface GanttColumn {
   /** Built-in keys include mode, code, name, duration, start and end. */
   key: string;
@@ -187,6 +195,8 @@ export interface GanttColumn {
   value?: (task: GanttTask) => unknown;
   /** Formats the computed or built-in value for display. */
   format?: (value: unknown, task: GanttTask) => string;
+  /** Customizes the native tooltip. Omit to use the formatted displayed value; set `false` to disable it. */
+  tooltip?: false | ((context: GanttColumnRenderContext) => string | undefined);
   /** Applies the component's semantic positive, negative or neutral column tone. */
   tone?: (value: unknown, task: GanttTask) => 'positive' | 'negative' | 'neutral' | undefined;
   /** Renders custom Lit or DOM content inside a read-only task-grid cell. */
@@ -215,6 +225,8 @@ export interface GanttResourceColumn {
   value?: (resource: GanttResource, task: GanttTask) => unknown;
   /** Formats the computed or built-in value for display. */
   format?: (value: unknown, resource: GanttResource, task: GanttTask) => string;
+  /** Customizes the native tooltip. Omit to use the formatted displayed value; set `false` to disable it. */
+  tooltip?: false | ((context: GanttResourceColumnRenderContext) => string | undefined);
   /** Maps an edited custom-cell value back to the resource assignment. */
   setValue?: (value: string, resource: GanttResource, task: GanttTask) => Partial<GanttResource> | void;
 }

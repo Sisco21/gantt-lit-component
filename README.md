@@ -733,6 +733,25 @@ For task-grid indicators, `GanttColumn.tone` can return `positive`, `negative` o
 
 Use `cellTemplate` to render Lit content and `cellStyle` to compute inline CSS from the full task and cell value. This is useful for icons, badges, emphasis, colour, shadows, borders or transitions, while keeping the column read-only.
 
+### Column tooltips
+
+Every left-grid cell displays its formatted value as a native tooltip by default. Override it through `tooltip`, or set it to `false` when the cell should not expose a tooltip. The same option exists on `GanttResourceColumn`; its context additionally contains `resource`.
+
+```ts
+{
+  key: 'delta',
+  label: 'Delta',
+  width: 120,
+  value: task => Number(task.actualCost || 0) - calculateCostWithCoefficient(task),
+  format: value => formatSignedCost(value),
+  tooltip: ({ task, formattedValue }) =>
+    `${task.name}\nActual cost compared with planned cost: ${formattedValue}`,
+},
+
+// Disables the tooltip for this column.
+{ key: 'code', label: 'Code', width: 64, tooltip: false },
+```
+
 ```ts
 import { html } from 'lit';
 import type { GanttColumnRenderContext } from 'gantt-lit-component';
