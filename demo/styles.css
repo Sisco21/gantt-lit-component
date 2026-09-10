@@ -394,7 +394,7 @@ header p {
   /* Public footer tokens: a consuming application can override these on :root,
      its own footer container, or .project-footer without editing this file. */
   --gantt-footer-variance-favorable: #16803c;
-  --gantt-footer-variance-unfavorable: #c62828;
+  --gantt-footer-variance-unfavorable: #ea0a0a;
   --gantt-footer-variance-neutral: var(--demo-muted);
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

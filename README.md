@@ -190,12 +190,17 @@ gantt.addEventListener('gantt-summary-changed', event => {
 updateFooter(gantt.getProjectSummary());
 ```
 
-`workingDurationDays` uses `nonWorkingDays`. Set `summaryReferenceDate` to calculate schedule alerts against a business date instead of the current day. The optional `plannedCost` and `actualCost` fields on a `GanttTask` feed `plannedCost`, `actualCost`, and `costVariance`; when `plannedCost` is absent, the calculated assignment/task cost is used as the planned value.
+`workingDurationDays` uses `nonWorkingDays`. Set `summaryReferenceDate` to calculate schedule alerts against a fixed business date instead of the current day, or provide a callback when the reference date must be recalculated dynamically. The optional `plannedCost` and `actualCost` fields on a `GanttTask` feed `plannedCost`, `actualCost`, and `costVariance`; when `plannedCost` is absent, the calculated assignment/task cost is used as the planned value.
 
 ```ts
 gantt.setOptions({
   summaryReferenceDate: '2026-01-20',
   nonWorkingDays: [0, 6],
+});
+
+// Dynamic reference date: evaluated whenever getProjectSummary() runs.
+gantt.setOptions({
+  summaryReferenceDate: () => new Date().toISOString().slice(0, 10),
 });
 
 gantt.updateTask('task-42', {

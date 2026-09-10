@@ -668,8 +668,8 @@ export interface GanttOptions {
   weekNumbering?: WeekNumbering;
   /** Days to shade as non-working. Uses UTC day numbers: 0 = Sunday, 6 = Saturday. Defaults to [0, 6]. */
   nonWorkingDays?: number[];
-  /** Date used to calculate overdue tasks in `GanttProjectSummary`. Defaults to today. */
-  summaryReferenceDate?: string;
+  /** Date used to calculate overdue tasks in `GanttProjectSummary`. Defaults to today. A callback is re-evaluated whenever the summary is calculated. */
+  summaryReferenceDate?: string | (() => string);
   /** Enables mouse panning from an empty part of the Gantt timeline. */
   pan?: GanttPanOptions;
   /** Override individual built-in labels after locale selection. */

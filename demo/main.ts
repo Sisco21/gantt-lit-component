@@ -3,6 +3,7 @@ import '../src/gantt-chart';
 import type { GanttChart } from '../src/gantt-chart';
 import { GanttColumnType } from '../src/types';
 import type { GanttColumnRenderContext, GanttColumnSettings, GanttData, GanttOptions, GanttProjectSummary, GanttResource, GanttResourceProvider, GanttResourceReference, GanttTask, GanttTaskDeleteContext } from '../src/types';
+import { formatDate } from '../src/utils';
 import sampleData from './data.json' with { type: 'json' };
 
 // JSON module imports widen literal values (for example, `type`) to `string`.
@@ -294,8 +295,8 @@ const demoOptions: GanttOptions = {
     ],
   },
   nonWorkingDays: [0, 6], // Sunday and Saturday
-  // Optional reference date for the project summary. Omit it to use the current day.
-  summaryReferenceDate: '2026-01-20',
+  // Re-evaluated whenever the summary is calculated, so overdue status follows the current day.
+  summaryReferenceDate: () => formatDate(new Date()),
   // Drag from an empty timeline cell to browse the plan without using its scrollbars.
   pan: { enabled: true, axis: 'both', trigger: 'empty-area' },
   history: {

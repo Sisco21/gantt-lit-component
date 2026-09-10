@@ -3384,7 +3384,9 @@ export class GanttChart extends LitElement {
   private formatDayTitle(date: Date): string { return this.getDateHeaderLabels(date).title; }
 
   private getSummaryReferenceDate(): string {
-    const configured = this.options.summaryReferenceDate;
+    const configured = typeof this.options.summaryReferenceDate === 'function'
+      ? this.options.summaryReferenceDate()
+      : this.options.summaryReferenceDate;
     return configured && /^\d{4}-\d{2}-\d{2}$/.test(configured) ? configured : formatDate(new Date());
   }
 
