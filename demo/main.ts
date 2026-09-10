@@ -2,7 +2,7 @@ import { html, nothing } from 'lit';
 import '../src/gantt-chart';
 import type { GanttChart } from '../src/gantt-chart';
 import { GanttColumnType } from '../src/types';
-import type { GanttColumnRenderContext, GanttColumnSettings, GanttData, GanttOptions, GanttProjectSummary, GanttResource, GanttResourceProvider, GanttResourceReference, GanttTask } from '../src/types';
+import type { GanttColumnRenderContext, GanttColumnSettings, GanttData, GanttOptions, GanttProjectSummary, GanttResource, GanttResourceProvider, GanttResourceReference, GanttTask, GanttTaskDeleteContext } from '../src/types';
 import sampleData from './data.json' with { type: 'json' };
 
 // JSON module imports widen literal values (for example, `type`) to `string`.
@@ -174,6 +174,13 @@ function saveDemoColumnSettings(settings: GanttColumnSettings): void {
   catch { /* Demo persistence is optional (for example, unavailable in private browsing). */ }
 }
 
+/** A host-owned confirmation dialog. Replace with a product dialog or an API permission check. */
+function confirmDemoTaskDeletion({ task, descendants, source }: GanttTaskDeleteContext): boolean {
+  const childCount = descendants.length - 1;
+  const children = childCount ? `\n\nThis will also delete ${childCount} child task${childCount === 1 ? '' : 's'}.` : '';
+  return window.confirm(`Delete “${task.name}”?\nSource: ${source}.${children}`);
+}
+
 /**
  * Example of host-level configuration. Copy this object into another project
  * and keep only the options that are useful for that integration.
@@ -226,6 +233,12 @@ const demoOptions: GanttOptions = {
     maxActions: 50,
     undoShortcut: ['Ctrl+z', 'Meta+z'],
     redoShortcut: ['Ctrl+y', 'Ctrl+Shift+z', 'Meta+y', 'Meta+Shift+z'],
+  },
+  taskDeletion: {
+    enabled: true,
+    keyboardShortcut: true,
+    // This function runs outside the component for the toolbar, Delete key and contextual menus.
+    confirm: confirmDemoTaskDeletion,
   },
   autoSchedule: true,
   showToday: true,

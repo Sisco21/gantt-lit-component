@@ -335,7 +335,7 @@ export interface GanttTaskContextMenuTemplateContext {
   close: () => void;
   edit: () => void;
   addTaskAfter: () => void;
-  deleteTask: () => void;
+  deleteTask: () => Promise<boolean>;
   updateTask: (patch: Partial<GanttTask>) => void;
   fitToView: () => void;
 }
@@ -574,6 +574,31 @@ export interface GanttTaskGridSplitterOptions {
   minTimelineWidth?: number | string;
 }
 
+/** Origin of a task deletion request. */
+export type GanttTaskDeleteSource = 'toolbar' | 'keyboard' | 'context-menu' | 'api';
+
+/** Information supplied before a task, or its complete child branch, is removed. */
+export interface GanttTaskDeleteContext {
+  /** Task explicitly selected for deletion. */
+  task: GanttTask;
+  /** The selected task followed by every child task that will be removed. */
+  descendants: GanttTask[];
+  source: GanttTaskDeleteSource;
+}
+
+/** Controls task-deletion entry points and lets the host application confirm an action. */
+export interface GanttTaskDeletionOptions {
+  /** Disables all component-initiated task deletion. Defaults to true. */
+  enabled?: boolean;
+  /** Enables the Delete keyboard key when a task is selected. Defaults to true. */
+  keyboardShortcut?: boolean;
+  /**
+   * Host-owned confirmation hook. Return `false` (or a Promise resolving to false)
+   * to keep the task; this is ideal for an external dialog or permission check.
+   */
+  confirm?: (context: GanttTaskDeleteContext) => boolean | Promise<boolean>;
+}
+
 export interface GanttOptions {
   headerWidth?: number;
   /** Default height of each task row in pixels. Clamped between 28 and 96; defaults to 42. */
@@ -601,6 +626,8 @@ export interface GanttOptions {
   milestoneTemplate?: GanttTaskBarTemplate;
   /** Optional local undo/redo history, including its toolbar controls and keyboard shortcuts. */
   history?: GanttHistoryOptions;
+  /** Controls deletion from the toolbar, Delete key and task context menus. */
+  taskDeletion?: GanttTaskDeletionOptions;
   /** Set false to disable task-bar tooltips. Defaults to true. */
   showTaskTooltips?: boolean;
   /** Replaces the content of the task-bar tooltip while keeping its positioning and visual shell. */

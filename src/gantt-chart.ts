@@ -23,6 +23,8 @@ import {
   GanttProjectSummary,
   GanttSaveHook,
   GanttTask,
+  GanttTaskDeleteContext,
+  GanttTaskDeleteSource,
   GanttTaskBarKind,
   GanttTheme,
   GanttTranslations,
@@ -607,6 +609,7 @@ export class GanttChart extends LitElement {
   private resourceReferenceRequest = 0;
   private headerWidthOverride?: number;
   private taskRowHeightOverride?: number;
+  private readonly taskDeletionRequests = new Set<string>();
   private readonly taskColumnVisibilityOverrides = new Map<string, boolean>();
   private readonly taskColumnWidthOverrides = new Map<string, number>();
   private readonly resourceColumnVisibilityOverrides = new Map<string, boolean>();
@@ -743,7 +746,7 @@ export class GanttChart extends LitElement {
           ` : nothing}
           <span class="toolbar-separator"></span>
           <button @click=${() => this.addChildTask('')}>＋ ${this.t('addTask')}</button>
-          <button class="danger" @click=${this.deleteSelected} ?disabled=${!this.selectedTaskId}>${this.t('delete')}</button>
+          <button class="danger" @click=${this.deleteSelected} ?disabled=${!this.selectedTaskId || !this.isTaskDeletionEnabled() || this.taskDeletionRequests.has(this.selectedTaskId || '')}>${this.t('delete')}</button>
           <button @click=${this.expandAllParents}>${this.t('expandAll')}</button>
           <button @click=${this.collapseAllParents}>${this.t('collapseAll')}</button>
           ${this.isColumnSettingsEnabled() ? html`<span class="column-menu-wrapper">
@@ -1214,22 +1217,43 @@ export class GanttChart extends LitElement {
     return task;
   }
 
-  deleteTask(taskId: string): void {
-    const descendants = new Set<string>();
-    const collect = (parentId: string) => {
-      for (const task of this.getFlatTasks()) {
-        if (task.parentId === parentId && !descendants.has(task.id)) {
-          descendants.add(task.id);
-          collect(task.id);
-        }
-      }
-    };
-    descendants.add(taskId);
-    collect(taskId);
-    const next = this.getFlatTasks().filter(task => !descendants.has(task.id));
-    this.dependencies = this.dependencies.filter(dependency => !descendants.has(dependency.from) && !descendants.has(dependency.to));
+  /** Requests deletion through the configured host confirmation hook before changing the plan. */
+  async deleteTask(taskId: string, source: GanttTaskDeleteSource = 'api'): Promise<boolean> {
+    if (!this.isTaskDeletionEnabled() || this.taskDeletionRequests.has(taskId)) return false;
+    const task = this.findTask(taskId);
+    if (!task) return false;
+    const descendants = this.getTaskSubtreeTasks(taskId);
+    const context: GanttTaskDeleteContext = { task, descendants, source };
+    const allowedByEvent = this.dispatchEvent(new CustomEvent<GanttTaskDeleteContext>('task-delete-requested', {
+      detail: context,
+      cancelable: true,
+      bubbles: true,
+      composed: true,
+    }));
+    if (!allowedByEvent) return false;
+
+    this.taskDeletionRequests.add(taskId);
+    this.requestUpdate();
+    try {
+      const confirmed = await this.options.taskDeletion?.confirm?.(context);
+      if (confirmed === false) return false;
+      this.deleteTaskNow(taskId, descendants);
+      return true;
+    } catch (error) {
+      this.setStatus(error instanceof Error ? error.message : this.t('saveFailed'), 'error');
+      return false;
+    } finally {
+      this.taskDeletionRequests.delete(taskId);
+      this.requestUpdate();
+    }
+  }
+
+  private deleteTaskNow(taskId: string, descendants: GanttTask[]): void {
+    const descendantIds = new Set(descendants.map(task => task.id));
+    const next = this.getFlatTasks().filter(task => !descendantIds.has(task.id));
+    this.dependencies = this.dependencies.filter(dependency => !descendantIds.has(dependency.from) && !descendantIds.has(dependency.to));
     this.replaceFlatTasks(next, 'task-deleted', taskId);
-    if (this.selectedTaskId && descendants.has(this.selectedTaskId)) this.selectedTaskId = null;
+    if (this.selectedTaskId && descendantIds.has(this.selectedTaskId)) this.selectedTaskId = null;
   }
 
   moveTask(taskId: string, parentId: string | null): void {
@@ -1596,7 +1620,10 @@ export class GanttChart extends LitElement {
       close: this.closeTaskContextMenu,
       edit: () => this.openTaskEditor(task.id),
       addTaskAfter: () => this.addTaskAfter(task.id),
-      deleteTask: () => this.deleteTask(task.id),
+      deleteTask: () => {
+        this.closeTaskContextMenu();
+        return this.deleteTask(task.id, 'context-menu');
+      },
       updateTask: (patch: Partial<GanttTask>) => this.updateTask(task.id, patch),
       fitToView: () => this.fitTaskToView(task.id),
     };
@@ -2385,7 +2412,10 @@ export class GanttChart extends LitElement {
       if (this.redo()) event.preventDefault();
       return;
     }
-    if (event.key === 'Delete' && this.selectedTaskId) this.deleteTask(this.selectedTaskId);
+    if (event.key === 'Delete' && this.selectedTaskId && this.options.taskDeletion?.keyboardShortcut !== false) {
+      event.preventDefault();
+      void this.deleteTask(this.selectedTaskId, 'keyboard');
+    }
   };
 
   private isEditableKeyboardTarget(target: EventTarget | null): boolean {
@@ -2705,7 +2735,9 @@ export class GanttChart extends LitElement {
     if (value !== null && value.trim() && value.trim() !== task.name) this.updateTask(task.id, { name: value.trim() });
   }
 
-  private deleteSelected = (): void => { if (this.selectedTaskId) this.deleteTask(this.selectedTaskId); };
+  private deleteSelected = (): void => { if (this.selectedTaskId) void this.deleteTask(this.selectedTaskId, 'toolbar'); };
+
+  private isTaskDeletionEnabled(): boolean { return this.options.taskDeletion?.enabled !== false; }
 
   private getFlatTasks(): GanttTask[] {
     const result: GanttTask[] = [];
@@ -2721,6 +2753,12 @@ export class GanttChart extends LitElement {
       if (ids.has(tasks[index].parentId || '')) ids.add(tasks[index].id);
     }
     return ids;
+  }
+
+  private getTaskSubtreeTasks(rootId: string): GanttTask[] {
+    const tasks = this.getFlatTasks();
+    const ids = this.getTaskSubtreeIds(rootId, tasks);
+    return tasks.filter(task => ids.has(task.id));
   }
 
   /** Prépare les index nécessaires au rendu, une seule fois par mise à jour. */

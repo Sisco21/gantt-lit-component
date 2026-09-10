@@ -153,6 +153,7 @@ gantt.addEventListener('tasks-changed', (event) => {
 | `task-selected` | `{ id, task }` | Update a host-side details panel. |
 | `persistence-error` | `{ error, change }` | Show a retry/error state after an automatic save fails. |
 | `project-file-error` | `{ error }` | Report an MPP import/export adapter error. |
+| `task-delete-requested` | `GanttTaskDeleteContext` | Audit or synchronously cancel a task-deletion request with `event.preventDefault()`. |
 
 For a simple in-memory host store, an option is also available:
 
@@ -204,6 +205,41 @@ gantt.updateTask('task-42', {
 ```
 
 Use the event when the change reason and revision matter; use `onTasksChange` for a lightweight full-data callback.
+
+### Confirm or disable task deletion
+
+By default, the **Delete** toolbar button and the `Delete` key remove the selected task. Deleting a phase also removes all of its child tasks. Configure `taskDeletion` to disable these entry points or delegate confirmation to a host-owned dialog, permission service, or API call. The same confirmation is used by `deleteTask()` and the `deleteTask` action supplied to a custom task context menu.
+
+```ts
+import type { GanttTaskDeleteContext } from 'gantt-lit-component';
+
+const confirmDeletion = async ({ task, descendants, source }: GanttTaskDeleteContext) => {
+  return hostDialog.confirm({
+    title: `Delete ${task.name}?`,
+    message: descendants.length > 1
+      ? `This action also removes ${descendants.length - 1} child tasks.`
+      : `Requested from ${source}.`,
+    confirmLabel: 'Delete',
+  });
+};
+
+gantt.setOptions({
+  taskDeletion: {
+    enabled: true,           // false disables component-initiated deletion
+    keyboardShortcut: true,  // false keeps the Delete key harmless
+    confirm: confirmDeletion,
+  },
+});
+```
+
+`task-delete-requested` is a cancelable DOM event. It is useful for synchronous rules such as locking a phase:
+
+```ts
+gantt.addEventListener('task-delete-requested', event => {
+  const request = event as CustomEvent<GanttTaskDeleteContext>;
+  if (request.detail.task.metadata?.locked) event.preventDefault();
+});
+```
 
 ## Persist locally or through an API
 
