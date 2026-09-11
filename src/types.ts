@@ -6,6 +6,8 @@
  * the server that stores it.
  */
 
+import type { GanttChart } from './gantt-chart';
+
 /** Runtime-safe task type constants for templates and host integrations. */
 export const TaskType = {
   Task: 'task',
@@ -72,6 +74,8 @@ export interface GanttTask {
   plannedCost?: number;
   /** Optional cost already incurred, supplied by the host business system. */
   actualCost?: number;
+  /** Set to `false` to lock this task against user edits in the component. Defaults to `true`. */
+  editable?: boolean;
   fields?: Record<string, GanttFieldValue>;
   resources?: GanttResource[];
   /** Persisted task-bar colour. A default is added automatically when the task is imported or created. */
@@ -330,6 +334,8 @@ export type GanttTaskTooltipTemplate = (context: GanttTaskTooltipTemplateContext
 /** Actions exposed to a custom task-editor template rendered inside the component dialog. */
 export interface GanttTaskEditorTemplateContext {
   task: GanttTask;
+  /** Whether the current task accepts user changes. */
+  editable: boolean;
   updateTask: (patch: Partial<GanttTask>) => void;
   moveTask: (parentId: string | null) => void;
   addResource: (resource?: Partial<GanttResource>) => void;
@@ -345,7 +351,11 @@ export type GanttTaskEditorTemplate = (context: GanttTaskEditorTemplateContext) 
 
 /** Actions available while rendering a task's right-click menu. */
 export interface GanttTaskContextMenuTemplateContext {
+  /** The Gantt component instance that opened this menu. */
+  gantt: GanttChart;
   task: GanttTask;
+  /** Whether mutation actions are available for this task. */
+  editable: boolean;
   close: () => void;
   edit: () => void;
   addTaskAfter: () => void;
@@ -669,8 +679,18 @@ export interface GanttOptions {
   taskEditorMode?: 'built-in' | 'external';
   /** Opens the built-in or custom task editor after addChildTask(). Defaults to false. */
   openTaskEditorOnCreate?: boolean;
+  /** Opens the configured task editor when a task bar is double-clicked. Defaults to false. */
+  openTaskEditorOnDoubleClick?: boolean;
+  /**
+   * Behaviour of a double-click in the left task grid. Defaults to `rename` to
+   * preserve the existing inline rename prompt. Use `edit` to open the configured
+   * built-in or host-owned editor, or `none` to disable the gesture.
+   */
+  taskGridDoubleClickAction?: 'rename' | 'edit' | 'none';
   /** Centres a newly created task in the Gantt timeline. Defaults to false. */
   focusTaskOnCreate?: boolean;
+  /** Additional rule used to lock tasks according to a workflow state or user permissions. */
+  isTaskEditable?: (task: GanttTask) => boolean;
   /** Replaces the body of the built-in editor with a host-provided Lit template. */
   taskEditorTemplate?: GanttTaskEditorTemplate;
   /** Replaces the built-in task right-click menu with host-provided content. */

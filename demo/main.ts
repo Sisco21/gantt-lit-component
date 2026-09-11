@@ -21,7 +21,7 @@ const DEMO_UI = {
     loadingSchedule: 'Loading schedule', preparingSample: 'Preparing sample data…', loadingInProgress: 'Loading in progress',
     calendarDays: 'calendar days', workingDays: 'working days', tasks: 'Tasks', phases: 'Phases', milestones: 'Milestones', overdue: 'overdue', next: 'Next', total: 'Total', actual: 'Actual', load: 'Load', capacity: 'Capacity',
     weekUpdated: 'Week: {weekStart} — {weekNumbering}', jsonLoaded: 'JSON file loaded: {name}', projectLoaded: 'Project loaded: {name}', invalidJson: 'Invalid JSON file', invalidProject: 'Invalid project file', sampleLoaded: 'Sample data loaded', generatingLarge: 'Generating {count} tasks and their dependencies…', largeLoaded: 'Large sample loaded: {count} tasks in {elapsed} ms', ganttReset: 'Gantt reset', componentReady: 'Gantt component ready', styleApplied: '{style} style applied', deleteConfirm: 'Delete “{name}”?', deleteChildren: 'This will also delete {count} child task{suffix}.',
-    addTaskOn: '＋ Add task on {date}', addPhaseOn: '＋ Add phase on {date}', fitSchedule: 'Fit schedule {date}', close: 'Close', editPhase: '✎ Edit phase', fitPhase: 'Fit phase', addPhaseTask: '＋ Add phase task', deletePhase: 'Delete phase', editTask: '✎ Edit task', setProgress0: 'Set progress to 0%', setProgress50: 'Set progress to 50%', markComplete: 'Mark as complete', fitTask: 'Fit {name}', addTaskAfter: '＋ Add task after', logTask: 'Log task', deleteTask: 'Delete task',
+    addTaskOn: '＋ Add task on {date}', addPhaseOn: '＋ Add phase on {date}', fitSchedule: 'Fit schedule {date}', close: 'Close', editPhase: '✎ Edit phase', fitPhase: 'Fit phase', addPhaseTask: '＋ Add phase task', deletePhase: 'Delete phase', editTask: '✎ Edit task', lockTask: 'Lock task', unlockTask: 'Unlock task', taskLocked: '“{name}” locked', taskUnlocked: '“{name}” unlocked', setProgress0: 'Set progress to 0%', setProgress50: 'Set progress to 50%', markComplete: 'Mark as complete', fitTask: 'Fit {name}', addTaskAfter: '＋ Add task after', logTask: 'Log task', deleteTask: 'Delete task',
     daysShort: 'd', days: 'days', cost: 'Cost', actualCost: 'Actual cost', totalCost: 'Total cost', costCoefficient: 'Cost × coefficient', delta: 'Delta', taskName: 'Task name', code: 'Code', name: 'Name', type: 'Type', unit: 'Unit of work', calendar: 'Calendar', unitPrice: 'PU', quantity: 'Q', totalQuantity: 'Total quantity', coefficient: 'Coefficient', actualCostVariance: 'Actual cost variance',
     resourcesForTask: 'Resources for this task', addSingleResource: 'Add a resource', resourceTeams: 'Resource teams / work packages', assignTeam: 'Assign team', assignedResources: 'Assigned resources', noAssignedResources: 'No resources assigned yet.', aiRecommendations: 'Suggested from the task name', aiRecommendationsHint: 'Demo rule only — replace this step with your AI service.', addAll: 'Add all', teamGroundworks: 'Groundworks team', teamGroundworksDescription: 'Surveyor, excavator and site equipment', teamConcrete: 'Concrete team', teamConcreteDescription: 'Concrete crew and pump', teamInstallation: 'Installation team', teamInstallationDescription: 'Installers and lifting equipment',
   },
@@ -33,7 +33,7 @@ const DEMO_UI = {
     loadingSchedule: 'Chargement du planning', preparingSample: 'Préparation des données exemple…', loadingInProgress: 'Chargement en cours',
     calendarDays: 'jours calendaires', workingDays: 'jours travaillés', tasks: 'Tâches', phases: 'Phases', milestones: 'Jalons', overdue: 'en retard', next: 'Prochaine', total: 'Total', actual: 'Réel', load: 'Charge', capacity: 'Capacité',
     weekUpdated: 'Semaine : {weekStart} — {weekNumbering}', jsonLoaded: 'Fichier JSON chargé : {name}', projectLoaded: 'Projet chargé : {name}', invalidJson: 'Fichier JSON invalide', invalidProject: 'Fichier projet invalide', sampleLoaded: 'Exemple chargé', generatingLarge: 'Génération de {count} tâches et de leurs dépendances…', largeLoaded: 'Grand exemple chargé : {count} tâches en {elapsed} ms', ganttReset: 'Gantt réinitialisé', componentReady: 'Composant Gantt prêt', styleApplied: 'Style {style} appliqué', deleteConfirm: 'Supprimer « {name} » ?', deleteChildren: 'Cette action supprimera aussi {count} tâche{suffix} enfant.',
-    addTaskOn: '＋ Ajouter une tâche le {date}', addPhaseOn: '＋ Ajouter une phase le {date}', fitSchedule: 'Ajuster le planning {date}', close: 'Fermer', editPhase: '✎ Modifier la phase', fitPhase: 'Ajuster la phase', addPhaseTask: '＋ Ajouter une tâche de phase', deletePhase: 'Supprimer la phase', editTask: '✎ Modifier la tâche', setProgress0: 'Mettre l’avancement à 0 %', setProgress50: 'Mettre l’avancement à 50 %', markComplete: 'Marquer comme terminée', fitTask: 'Ajuster {name}', addTaskAfter: '＋ Ajouter une tâche après', logTask: 'Journaliser la tâche', deleteTask: 'Supprimer la tâche',
+    addTaskOn: '＋ Ajouter une tâche le {date}', addPhaseOn: '＋ Ajouter une phase le {date}', fitSchedule: 'Ajuster le planning {date}', close: 'Fermer', editPhase: '✎ Modifier la phase', fitPhase: 'Ajuster la phase', addPhaseTask: '＋ Ajouter une tâche de phase', deletePhase: 'Supprimer la phase', editTask: '✎ Modifier la tâche', lockTask: 'Verrouiller la tâche', unlockTask: 'Déverrouiller la tâche', taskLocked: '« {name} » verrouillée', taskUnlocked: '« {name} » déverrouillée', setProgress0: 'Mettre l’avancement à 0 %', setProgress50: 'Mettre l’avancement à 50 %', markComplete: 'Marquer comme terminée', fitTask: 'Ajuster {name}', addTaskAfter: '＋ Ajouter une tâche après', logTask: 'Journaliser la tâche', deleteTask: 'Supprimer la tâche',
     daysShort: 'j', days: 'jours', cost: 'Coût', actualCost: 'Coût réel', totalCost: 'Coût total', costCoefficient: 'Coût × coefficient', delta: 'Écart', taskName: 'Nom de la tâche', code: 'Code', name: 'Nom', type: 'Type', unit: 'Unité d’œuvre', calendar: 'Calendrier', unitPrice: 'PU', quantity: 'Q', totalQuantity: 'Quantité totale', coefficient: 'Coefficient', actualCostVariance: 'Écart de coût réel',
     resourcesForTask: 'Ressources de la tâche', addSingleResource: 'Ajouter une ressource', resourceTeams: 'Équipes / ouvrages', assignTeam: 'Affecter l’équipe', assignedResources: 'Ressources affectées', noAssignedResources: 'Aucune ressource affectée.', aiRecommendations: 'Suggestion basée sur le nom de la tâche', aiRecommendationsHint: 'Règle de démonstration — remplacez cette étape par votre service IA.', addAll: 'Tout ajouter', teamGroundworks: 'Équipe terrassement', teamGroundworksDescription: 'Géomètre, pelle et matériel de chantier', teamConcrete: 'Équipe béton', teamConcreteDescription: 'Équipe béton et pompe', teamInstallation: 'Équipe installation', teamInstallationDescription: 'Installateurs et équipement de levage',
   },
@@ -354,6 +354,14 @@ function confirmDemoTaskDeletion({ task, descendants }: GanttTaskDeleteContext):
   return window.confirm(`${demoText('deleteConfirm', { name: task.name })}${children}`);
 }
 
+/** Example of an application-owned context-menu action. */
+function lockUnlockTask(gantt: GanttChart, task: GanttTask): void {
+  const unlocked = task.editable === false;
+  if (unlocked ? gantt.unlockTask(task.id) : gantt.lockTask(task.id)) {
+    showStatus(demoText(unlocked ? 'taskUnlocked' : 'taskLocked', { name: task.name }), 'success');
+  }
+}
+
 function addDemoResourceBundle(context: GanttTaskEditorTemplateContext, bundle: DemoResourceBundle): void {
   const assignedResourceIds = new Set((context.task.resources || []).map(resource => resource.resourceId || resource.id));
   let addedCount = 0;
@@ -388,6 +396,12 @@ function renderDemoTaskEditor(context: GanttTaskEditorTemplateContext) {
       </label>
       <label>${demoText('progress')}
         <input type="number" min="0" max="100" step="1" .value=${String(task.progress)} @change=${(event: Event) => context.updateTask({ progress: Math.min(100, Math.max(0, Number((event.target as HTMLInputElement).value) || 0)) })} />
+      </label>
+      <label>${demoText('actualCost')}
+        <input type="number" min="0" step="0.01" .value=${task.actualCost === undefined ? '' : String(task.actualCost)} @change=${(event: Event) => {
+          const value = (event.target as HTMLInputElement).value;
+          context.updateTask({ actualCost: value === '' ? undefined : Math.max(0, Number(value) || 0) });
+        }} />
       </label>
       <label>${demoText('start')}
         <input type="date" .value=${task.start} @change=${(event: Event) => context.updateTask({ start: (event.target as HTMLInputElement).value })} />
@@ -509,6 +523,10 @@ const demoOptions: GanttOptions = {
   showDependencies: true,
   taskEditorMode: 'built-in',
   openTaskEditorOnCreate: true,
+  // Double-click a Gantt bar to open this editor.
+  openTaskEditorOnDoubleClick: true,
+  // The grid can use the same editor, retain rename behaviour, or disable double-clicks.
+  taskGridDoubleClickAction: 'edit',
   focusTaskOnCreate: true,
   // Demo template: add one catalogue resource or assign a reusable team/work package.
   taskEditorTemplate: renderDemoTaskEditor,
@@ -524,15 +542,21 @@ const demoOptions: GanttOptions = {
   // while normal tasks receive progress actions. `task.fields` and `task.metadata`
   // are also available for business-specific menu rules.
   taskContextMenuTemplate: context => {
-    const { task, close, edit, addTaskAfter, deleteTask, updateTask, fitToView } = context;
+    const { gantt, task, close, edit, addTaskAfter, deleteTask, updateTask, fitToView } = context;
+    const lockOrUnlock = () => {
+      lockUnlockTask(gantt, task);
+      close();
+    };
     if (task.type === 'parent') return html`
       <button role="menuitem" @click=${edit}>${demoText('editPhase')}</button>
+      <button role="menuitem" @click=${lockOrUnlock}>${demoText(task.editable === false ? 'unlockTask' : 'lockTask')}</button>
       <button role="menuitem" @click=${() => { fitToView(); close(); }}>${demoText('fitPhase')}</button>
       <button role="menuitem" @click=${addTaskAfter}>${demoText('addPhaseTask')}</button>
       <button class="danger" role="menuitem" @click=${deleteTask}>${demoText('deletePhase')}</button>
     `;
     return html`
       <button role="menuitem" @click=${edit}>${demoText('editTask')}</button>
+      <button role="menuitem" @click=${lockOrUnlock}>${demoText(task.editable === false ? 'unlockTask' : 'lockTask')}</button>
       <div class="gantt-context-submenu">
         <button class="gantt-context-submenu-trigger" role="menuitem" aria-haspopup="menu">${demoText('schedule')} <span aria-hidden="true">›</span></button>
         <div class="gantt-context-submenu-panel" role="menu">

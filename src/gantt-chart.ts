@@ -406,6 +406,7 @@ export class GanttChart extends LitElement {
     }
 
     .task-row { z-index: 5; width: 100%; overflow: hidden; border-right: 1px solid var(--gantt-border); cursor: pointer; }
+    .task-row.read-only { cursor: default; }
     .task-row.alt, .timeline-row.alt { background-color: var(--gantt-row-alt); }
     .task-row:hover, .task-row.selected { background-color: var(--gantt-selection); color: var(--gantt-selection-foreground); }
     .task-row.drop-inside { box-shadow: inset 0 0 0 2px #60a5fa; }
@@ -435,6 +436,7 @@ export class GanttChart extends LitElement {
     .today-label { position: absolute; top: 4px; left: 5px; color: var(--today-color, var(--gantt-red)); font-size: 10px; font-weight: 700; white-space: nowrap; }
     .task-bar { position: absolute; top: 50%; z-index: 4; height: var(--task-bar-height); border-radius: var(--gantt-bar-radius, 5px); background: var(--bar-color); box-shadow: inset 0 -2px rgb(0 0 0 / 10%); color: #fff; cursor: grab; font-size: 11px; line-height: var(--task-bar-height); overflow: hidden; padding: 0 7px; text-overflow: ellipsis; transform: translateY(-50%); white-space: nowrap; }
     .task-bar:active { cursor: grabbing; }
+    .task-bar.read-only, .task-work.read-only, .summary-bar.read-only { cursor: default; }
     .task-bar.selected { outline: 2px solid #1d65c1; outline-offset: 1px; }
     .task-bar.milestone { width: var(--task-milestone-size) !important; height: var(--task-milestone-size); top: 50%; transform: translateY(-50%) rotate(45deg); border-radius: 2px; padding: 0; }
     .milestone-template { position: absolute; top: 50%; z-index: 4; max-width: min(240px, calc(100% - 24px)); overflow: hidden; color: var(--milestone-color); font-size: 11px; font-weight: 700; line-height: 18px; pointer-events: none; transform: translateY(-50%); text-overflow: ellipsis; white-space: nowrap; }
@@ -1137,7 +1139,7 @@ export class GanttChart extends LitElement {
 
   updateTask(taskId: string, patch: Partial<GanttTask>): void {
     const current = this.findTask(taskId);
-    if (!current) return;
+    if (!current || !this.isTaskEditable(current)) return;
     const changesDates = patch.start !== undefined || patch.end !== undefined;
     const base = this.getFlatTasks();
     let updated = changesDates
@@ -1145,6 +1147,24 @@ export class GanttChart extends LitElement {
       : base;
     updated = updated.map(task => task.id === taskId ? { ...task, ...patch, start: task.start, end: task.end, id: task.id } : task);
     this.replaceFlatTasks(updated, 'task-updated', taskId);
+  }
+
+  /** Locks a task against every built-in editing interaction. Returns false when the task is unknown. */
+  lockTask(taskId: string): boolean {
+    return this.setTaskLocked(taskId, true);
+  }
+
+  /** Unlocks a task for built-in editing interactions. Returns false when the task is unknown. */
+  unlockTask(taskId: string): boolean {
+    return this.setTaskLocked(taskId, false);
+  }
+
+  /** Sets the persisted lock state without requiring the task to already be editable. */
+  setTaskLocked(taskId: string, locked: boolean): boolean {
+    if (!this.findTask(taskId)) return false;
+    const updated = this.getFlatTasks().map(task => task.id === taskId ? { ...task, editable: !locked } : task);
+    this.replaceFlatTasks(updated, 'task-updated', taskId);
+    return true;
   }
 
   addChildTask(parentId: string, newTask: Partial<GanttTask> = {}): GanttTask {
@@ -1174,7 +1194,7 @@ export class GanttChart extends LitElement {
   async deleteTask(taskId: string, source: GanttTaskDeleteSource = 'api'): Promise<boolean> {
     if (!this.isTaskDeletionEnabled() || this.taskDeletionRequests.has(taskId)) return false;
     const task = this.findTask(taskId);
-    if (!task) return false;
+    if (!task || !this.isTaskEditable(task)) return false;
     const descendants = this.getTaskSubtreeTasks(taskId);
     const context: GanttTaskDeleteContext = { task, descendants, source };
     const allowedByEvent = this.dispatchEvent(new CustomEvent<GanttTaskDeleteContext>('task-delete-requested', {
@@ -1210,14 +1230,14 @@ export class GanttChart extends LitElement {
   }
 
   moveTask(taskId: string, parentId: string | null): void {
-    if (taskId === parentId || this.isDescendant(parentId, taskId)) return;
+    if (!this.isTaskEditable(this.findTask(taskId)) || taskId === parentId || this.isDescendant(parentId, taskId)) return;
     const next = moveTaskParent(this.getFlatTasks(), taskId, parentId);
     this.replaceFlatTasks(next, 'task-moved', taskId);
   }
 
   /** Reorders a task (and its descendants) before or after a sibling target. */
   reorderTask(taskId: string, targetTaskId: string, position: 'before' | 'after'): void {
-    if (taskId === targetTaskId || this.isDescendant(targetTaskId, taskId)) return;
+    if (!this.isTaskEditable(this.findTask(taskId)) || taskId === targetTaskId || this.isDescendant(targetTaskId, taskId)) return;
     const flatTasks = this.getFlatTasks();
     const reorderedTasks = reorderTaskBranch(flatTasks, taskId, targetTaskId, position);
     if (!reorderedTasks) return;
@@ -1226,6 +1246,7 @@ export class GanttChart extends LitElement {
 
   /** Moves a task branch one level out of its current parent. */
   private outdentTask(taskId: string): void {
+    if (!this.isTaskEditable(this.findTask(taskId))) return;
     const outdentedTasks = outdentTaskBranch(this.getFlatTasks(), taskId);
     if (!outdentedTasks) return;
     this.replaceFlatTasks(outdentedTasks, 'task-moved', taskId);
@@ -1251,17 +1272,19 @@ export class GanttChart extends LitElement {
     const children = task.children || [];
     const depth = this.getDepth(task);
     const selected = task.id === this.selectedTaskId;
+    const editable = this.isTaskEditable(task);
     const dropPosition = this.taskDropTarget?.taskId === task.id ? this.taskDropTarget.position : '';
     return html`
-      <div class="task-row ${selected ? 'selected' : ''} ${index % 2 ? 'alt' : ''} ${searchMatches.has(task.id) ? 'search-match' : ''} ${task.id === currentSearchId ? 'search-current' : ''} ${dropPosition ? `drop-${dropPosition}` : ''}" style="top:${index * this.getTaskRowHeight()}px" data-task-id=${task.id}
-           draggable="true"
+      <div class="task-row ${editable ? '' : 'read-only'} ${selected ? 'selected' : ''} ${index % 2 ? 'alt' : ''} ${searchMatches.has(task.id) ? 'search-match' : ''} ${task.id === currentSearchId ? 'search-current' : ''} ${dropPosition ? `drop-${dropPosition}` : ''}" style="top:${index * this.getTaskRowHeight()}px" data-task-id=${task.id}
+           draggable=${editable ? 'true' : 'false'}
+           aria-readonly=${editable ? 'false' : 'true'}
            @click=${() => this.focusTaskFromGrid(task.id)}
            @dragstart=${(event: DragEvent) => this.handleDragStart(event, task.id)}
            @dragend=${this.clearTaskDropTarget}
            @dragover=${(event: DragEvent) => this.handleDragOver(event, task.id)}
            @drop=${(event: DragEvent) => this.handleDrop(event, task.id)}
            @contextmenu=${(event: MouseEvent) => this.openTaskContextMenu(task.id, event)}
-           @dblclick=${() => this.editTaskName(task)}>
+           @dblclick=${() => this.handleTaskGridDoubleClick(task)}>
         <div class="task-cells">${this.getColumns().map(column => this.renderTaskCell(task, column, depth, children.length > 0))}</div>
       </div>
     `;
@@ -1294,6 +1317,7 @@ export class GanttChart extends LitElement {
   }
 
   private renderResourcePanel(task: GanttTask, start: Date, totalDays: number, dayWidth: number) {
+    const taskEditable = this.isTaskEditable(task);
     const resources = task.resources || [];
     const resourceHeader = this.getResourceHeaderSettings();
     const resourceColumns = this.getResourceColumns();
@@ -1327,7 +1351,7 @@ export class GanttChart extends LitElement {
               <div class="resources-grid">
             ${resources.map(resource => html`
               ${resourceColumns.map(column => this.renderResourceCell(task, resource, column))}
-              <div class="resource-cell resource-action"><button class="danger" aria-label="${this.t('delete')} ${resource.name}" @click=${() => this.removeResource(task.id, resource.id)}>×</button></div>
+              <div class="resource-cell resource-action">${taskEditable ? html`<button class="danger" aria-label="${this.t('delete')} ${resource.name}" @click=${() => this.removeResource(task.id, resource.id)}>×</button>` : nothing}</div>
             `)}
           </div>
             </div>
@@ -1343,7 +1367,7 @@ export class GanttChart extends LitElement {
             const value = resource.quantityByDate?.[dateKey];
             const unavailable = !working;
             const title = unavailable ? `${this.getResourceCalendarLabel(resource)} — ${this.t('nonWorkingDay')}` : this.formatDayTitle(date);
-            return html`<input class="resource-day-input ${unavailable ? 'calendar-closed' : ''}" type="number" min="0" step="1" ?disabled=${!active || unavailable} value=${value === undefined ? '' : value} title=${title} aria-label="${resource.name} ${dateKey}" @change=${(event: Event) => this.updateResourceQuantity(task.id, resource.id, dateKey, (event.target as HTMLInputElement).value)} />`;
+            return html`<input class="resource-day-input ${unavailable ? 'calendar-closed' : ''}" type="number" min="0" step="1" ?disabled=${!taskEditable || !active || unavailable} value=${value === undefined ? '' : value} title=${title} aria-label="${resource.name} ${dateKey}" @change=${(event: Event) => this.updateResourceQuantity(task.id, resource.id, dateKey, (event.target as HTMLInputElement).value)} />`;
           })}</div></div>`)}
               </div>
             </div>
@@ -1359,22 +1383,23 @@ export class GanttChart extends LitElement {
   }
 
   private renderResourceCell(task: GanttTask, resource: GanttResource, column: GanttResourceColumn) {
+    const taskEditable = this.isTaskEditable(task);
     const value = this.getResourceColumnValue(task, resource, column);
     const numeric = this.isNumericColumn(column);
     const formattedValue = this.formatResourceColumnValue(value, column, resource, task);
     const context: GanttResourceColumnRenderContext = { resource, task, value, formattedValue };
     const tooltip = this.getResourceColumnTooltip(column, context);
     if (column.key === 'quantity' || column.key === 'totalQuantity') {
-      return html`<div class="resource-cell total"><input type="number" min=${ifDefined(this.getResourceColumnMin(column))} .step=${this.getResourceColumnStepProperty(column)} value=${value ?? 0} title=${ifDefined(tooltip)} aria-label="${this.t('quantity')} ${resource.name}" @change=${(event: Event) => this.distributeResourceTotal(task.id, resource.id, (event.target as HTMLInputElement).value)} /></div>`;
+      return html`<div class="resource-cell total"><input type="number" min=${ifDefined(this.getResourceColumnMin(column))} .step=${this.getResourceColumnStepProperty(column)} ?disabled=${!taskEditable} value=${value ?? 0} title=${ifDefined(tooltip)} aria-label="${this.t('quantity')} ${resource.name}" @change=${(event: Event) => this.distributeResourceTotal(task.id, resource.id, (event.target as HTMLInputElement).value)} /></div>`;
     }
     if (column.key === 'calendarId' && column.editable) {
-      return html`<div class="resource-cell"><select .value=${resource.calendarId || ''} title=${ifDefined(tooltip)} aria-label=${this.tFormat('resourceCalendarFor', { name: resource.name })} @change=${(event: Event) => this.updateResource(task.id, resource.id, 'calendarId', (event.target as HTMLSelectElement).value || undefined)}><option value="">${this.t('resource')}</option>${this.calendars.map(calendar => html`<option value=${calendar.id}>${calendar.name}</option>`)}</select></div>`;
+      return html`<div class="resource-cell"><select .value=${resource.calendarId || ''} ?disabled=${!taskEditable} title=${ifDefined(tooltip)} aria-label=${this.tFormat('resourceCalendarFor', { name: resource.name })} @change=${(event: Event) => this.updateResource(task.id, resource.id, 'calendarId', (event.target as HTMLSelectElement).value || undefined)}><option value="">${this.t('resource')}</option>${this.calendars.map(calendar => html`<option value=${calendar.id}>${calendar.name}</option>`)}</select></div>`;
     }
     if (column.editable && ['name', 'type', 'unitCost', 'quantity'].includes(column.key)) {
-      return html`<div class="resource-cell ${numeric ? 'numeric' : ''}"><input type=${numeric ? 'number' : 'text'} min=${ifDefined(this.getResourceColumnMin(column))} .step=${this.getResourceColumnStepProperty(column)} .value=${String(value ?? '')} title=${ifDefined(tooltip)} @change=${(event: Event) => this.updateResourceColumn(task, resource, column, (event.target as HTMLInputElement).value)} /></div>`;
+      return html`<div class="resource-cell ${numeric ? 'numeric' : ''}"><input type=${numeric ? 'number' : 'text'} min=${ifDefined(this.getResourceColumnMin(column))} .step=${this.getResourceColumnStepProperty(column)} ?disabled=${!taskEditable} .value=${String(value ?? '')} title=${ifDefined(tooltip)} @change=${(event: Event) => this.updateResourceColumn(task, resource, column, (event.target as HTMLInputElement).value)} /></div>`;
     }
     if (column.editable) {
-      return html`<div class="resource-cell ${numeric ? 'numeric' : ''}"><input type=${numeric ? 'number' : 'text'} min=${ifDefined(this.getResourceColumnMin(column))} .step=${this.getResourceColumnStepProperty(column)} .value=${String(value ?? '')} title=${ifDefined(tooltip)} @change=${(event: Event) => this.updateResourceColumn(task, resource, column, (event.target as HTMLInputElement).value)} /></div>`;
+      return html`<div class="resource-cell ${numeric ? 'numeric' : ''}"><input type=${numeric ? 'number' : 'text'} min=${ifDefined(this.getResourceColumnMin(column))} .step=${this.getResourceColumnStepProperty(column)} ?disabled=${!taskEditable} .value=${String(value ?? '')} title=${ifDefined(tooltip)} @change=${(event: Event) => this.updateResourceColumn(task, resource, column, (event.target as HTMLInputElement).value)} /></div>`;
     }
     return html`<div class="resource-cell ${numeric ? 'numeric' : ''}" title=${ifDefined(tooltip)}>${formattedValue}</div>`;
   }
@@ -1474,13 +1499,16 @@ export class GanttChart extends LitElement {
     if (!menu) return nothing;
     const task = this.findTask(menu.taskId);
     if (!task) return nothing;
+    const editable = this.isTaskEditable(task);
     const template = this.options.taskContextMenuTemplate;
     return html`
       <div class="resource-context-backdrop" @click=${this.closeTaskContextMenu}></div>
       <div class="task-context-menu" role="menu" style="left:${menu.x}px; top:${menu.y}px" @mouseover=${this.positionTaskContextSubmenu} @focusin=${this.positionTaskContextSubmenu} @click=${this.handleTaskContextMenuClick}>
-        ${template ? template(this.getTaskContextMenuTemplateContext(task)) : html`
+        ${template ? template(this.getTaskContextMenuTemplateContext(task)) : editable ? html`
           <button @click=${() => this.openTaskEditor(menu.taskId)}>✎ ${this.t('editTask')}</button>
           <button @click=${this.addTaskAfterContext}>＋ ${this.t('addTaskAfter')}</button>
+        ` : html`
+          <button @click=${() => { this.fitTaskToView(task.id); this.closeTaskContextMenu(); }}>${this.t('fitTask')}</button>
         `}
       </div>
     `;
@@ -1561,16 +1589,20 @@ export class GanttChart extends LitElement {
   }
 
   private getTaskContextMenuTemplateContext(task: GanttTask) {
+    const editable = this.isTaskEditable(task);
     return {
+      gantt: this,
       task,
+      editable,
       close: this.closeTaskContextMenu,
-      edit: () => this.openTaskEditor(task.id),
-      addTaskAfter: () => this.addTaskAfter(task.id),
+      edit: () => { if (editable) this.openTaskEditor(task.id); },
+      addTaskAfter: () => { if (editable) this.addTaskAfter(task.id); },
       deleteTask: () => {
+        if (!editable) return Promise.resolve(false);
         this.closeTaskContextMenu();
         return this.deleteTask(task.id, 'context-menu');
       },
-      updateTask: (patch: Partial<GanttTask>) => this.updateTask(task.id, patch),
+      updateTask: (patch: Partial<GanttTask>) => { if (editable) this.updateTask(task.id, patch); },
       fitToView: () => this.fitTaskToView(task.id),
     };
   }
@@ -1603,15 +1635,17 @@ export class GanttChart extends LitElement {
   }
 
   private getTaskEditorTemplateContext(task: GanttTask) {
+    const editable = this.isTaskEditable(task);
     return {
       task,
-      updateTask: (patch: Partial<GanttTask>) => this.updateTask(task.id, patch),
-      moveTask: (parentId: string | null) => this.moveTask(task.id, parentId),
-      addResource: (resource: Partial<GanttResource> = {}) => this.addResource(task.id, resource),
-      openResourcePicker: () => this.openResourcePicker(task.id),
-      removeResource: (resourceId: string) => this.removeResource(task.id, resourceId),
-      addDependency: (fromTaskId: string, type?: GanttDependency['type']) => this.addDependency(fromTaskId, task.id, type),
-      removeDependency: (fromTaskId: string) => this.removeDependency(fromTaskId, task.id),
+      editable,
+      updateTask: (patch: Partial<GanttTask>) => { if (editable) this.updateTask(task.id, patch); },
+      moveTask: (parentId: string | null) => { if (editable) this.moveTask(task.id, parentId); },
+      addResource: (resource: Partial<GanttResource> = {}) => editable ? this.addResource(task.id, resource) : null,
+      openResourcePicker: () => { if (editable) this.openResourcePicker(task.id); },
+      removeResource: (resourceId: string) => { if (editable) this.removeResource(task.id, resourceId); },
+      addDependency: (fromTaskId: string, type?: GanttDependency['type']) => { if (editable) this.addDependency(fromTaskId, task.id, type); },
+      removeDependency: (fromTaskId: string) => { if (editable) this.removeDependency(fromTaskId, task.id); },
       close: this.closeTaskEditor,
     };
   }
@@ -1698,12 +1732,14 @@ export class GanttChart extends LitElement {
   private renderTaskBar(task: GanttTask, left: number, width: number, color: string, selected: boolean, timelineStart: Date, dayWidth: number) {
     const milestone = task.type === 'milestone';
     const summary = !milestone && task.type === 'parent';
+    const editable = this.isTaskEditable(task);
     if (summary) {
       const template = this.getTaskBarTemplateContent(task, color, width, 'summary');
       return html`
-        <div class="summary-bar ${selected ? 'selected' : ''}" data-task-id=${task.id} style="left:${left}px; width:${Math.max(24, width)}px; --summary-color:${color};"
+        <div class="summary-bar ${editable ? '' : 'read-only'} ${selected ? 'selected' : ''}" data-task-id=${task.id} style="left:${left}px; width:${Math.max(24, width)}px; --summary-color:${color};"
              aria-label=${task.name}
              @click=${(event: Event) => { event.stopPropagation(); this.selectTask(task.id); }}
+             @dblclick=${(event: MouseEvent) => this.openTaskEditorFromBar(task, event)}
              @pointerenter=${(event: PointerEvent) => this.openTaskTooltip(event, task, color, 'summary')}
              @pointermove=${this.moveTaskTooltip}
              @pointerleave=${this.closeTaskTooltip}
@@ -1716,9 +1752,10 @@ export class GanttChart extends LitElement {
     if (segments) {
       let remainingProgressWidth = segments.reduce((total, segment) => total + segment.width, 0) * Math.min(100, Math.max(0, task.progress)) / 100;
       return html`
-        <div class="task-work ${selected ? 'selected' : ''}" data-task-id=${task.id} style="left:${left}px; width:${width}px; --bar-color:${color};"
+        <div class="task-work ${editable ? '' : 'read-only'} ${selected ? 'selected' : ''}" data-task-id=${task.id} style="left:${left}px; width:${width}px; --bar-color:${color};"
              aria-label=${task.name}
              @click=${(event: Event) => { event.stopPropagation(); this.selectTask(task.id); }}
+             @dblclick=${(event: MouseEvent) => this.openTaskEditorFromBar(task, event)}
              @pointerenter=${(event: PointerEvent) => this.openTaskTooltip(event, task, color, 'task')}
              @pointermove=${this.moveTaskTooltip}
              @pointerleave=${this.closeTaskTooltip}
@@ -1730,17 +1767,17 @@ export class GanttChart extends LitElement {
             return html`<div class="task-segment" style="left:${segment.left - left}px; width:${segment.width}px"><div class="task-segment-progress" style="--segment-progress:${progressWidth}px"></div></div>`;
           })}
           <div class="task-work-label">${this.renderTaskBarContent(task, color, width)}</div>
-          <span class="resize-handle start" title=${this.t('resizeStart')} @pointerdown=${(event: PointerEvent) => this.startBarDrag(event, task, 'resize-start')}></span>
-          <span class="resize-handle end" title=${this.t('resizeEnd')} @pointerdown=${(event: PointerEvent) => this.startBarDrag(event, task, 'resize-end')}></span>
+          ${editable ? html`<span class="resize-handle start" title=${this.t('resizeStart')} @pointerdown=${(event: PointerEvent) => this.startBarDrag(event, task, 'resize-start')}></span><span class="resize-handle end" title=${this.t('resizeEnd')} @pointerdown=${(event: PointerEvent) => this.startBarDrag(event, task, 'resize-end')}></span>` : nothing}
         </div>
       `;
     }
     const milestoneTemplate = milestone ? this.getTaskBarTemplateContent(task, color, width, 'milestone') : undefined;
     return html`
-      <div class="task-bar ${milestone ? 'milestone' : ''} ${selected ? 'selected' : ''}" data-task-id=${task.id}
+      <div class="task-bar ${editable ? '' : 'read-only'} ${milestone ? 'milestone' : ''} ${selected ? 'selected' : ''}" data-task-id=${task.id}
            style="left:${left}px; width:${milestone ? 17 : width}px; --bar-color:${color}; --progress:${task.progress}%"
            aria-label=${task.name}
            @click=${(event: Event) => { event.stopPropagation(); this.selectTask(task.id); }}
+           @dblclick=${(event: MouseEvent) => this.openTaskEditorFromBar(task, event)}
            @pointerenter=${(event: PointerEvent) => this.openTaskTooltip(event, task, color, 'task')}
            @pointermove=${this.moveTaskTooltip}
            @pointerleave=${this.closeTaskTooltip}
@@ -1748,8 +1785,7 @@ export class GanttChart extends LitElement {
         ${milestone ? nothing : html`
           <div class="progress-fill"></div>
           ${this.renderTaskBarContent(task, color, width)}
-          <span class="resize-handle start" @pointerdown=${(event: PointerEvent) => this.startBarDrag(event, task, 'resize-start')}></span>
-          <span class="resize-handle end" @pointerdown=${(event: PointerEvent) => this.startBarDrag(event, task, 'resize-end')}></span>
+          ${editable ? html`<span class="resize-handle start" @pointerdown=${(event: PointerEvent) => this.startBarDrag(event, task, 'resize-start')}></span><span class="resize-handle end" @pointerdown=${(event: PointerEvent) => this.startBarDrag(event, task, 'resize-end')}></span>` : nothing}
         `}
       </div>
       ${milestoneTemplate !== undefined ? html`<div class="milestone-template" style="left:${left + 23}px; --milestone-color:${color};">${milestoneTemplate}</div>` : nothing}
@@ -2379,6 +2415,10 @@ export class GanttChart extends LitElement {
   }
 
   private handleDragStart(event: DragEvent, taskId: string): void {
+    if (!this.isTaskEditable(this.findTask(taskId))) {
+      event.preventDefault();
+      return;
+    }
     this.draggedTaskId = taskId;
     this.clearTaskDropTarget();
     event.dataTransfer?.setData('text/plain', taskId);
@@ -2396,7 +2436,7 @@ export class GanttChart extends LitElement {
 
   private handleDragOver(event: DragEvent, targetTaskId: string): void {
     const taskId = this.draggedTaskId;
-    if (!taskId || this.isDescendant(targetTaskId, taskId)) return;
+    if (!taskId || !this.isTaskEditable(this.findTask(taskId)) || this.isDescendant(targetTaskId, taskId)) return;
     const target = this.findTask(targetTaskId);
     if (!target) return;
     const row = event.currentTarget as HTMLElement;
@@ -2423,7 +2463,7 @@ export class GanttChart extends LitElement {
     const position = this.taskDropTarget?.taskId === targetTaskId ? this.taskDropTarget.position : fallbackPosition;
     this.draggedTaskId = null;
     this.clearTaskDropTarget();
-    if (!taskId) return;
+    if (!taskId || !this.isTaskEditable(this.findTask(taskId))) return;
     if (position === 'outdent') this.outdentTask(taskId);
     else if (position === 'inside') this.moveTask(taskId, targetTaskId);
     else this.reorderTask(taskId, targetTaskId, position);
@@ -2442,7 +2482,7 @@ export class GanttChart extends LitElement {
   }
 
   private startBarDrag(event: PointerEvent, task: GanttTask, mode: 'move' | 'resize-start' | 'resize-end'): void {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || !this.isTaskEditable(task)) return;
     this.closeTaskTooltip();
     event.preventDefault();
     event.stopPropagation();
@@ -2538,6 +2578,7 @@ export class GanttChart extends LitElement {
     mode: 'move' | 'resize-start' | 'resize-end' = 'move',
     baseTasks: GanttTask[] = this.getFlatTasks(),
   ): void {
+    if (!this.isTaskEditable(this.findTask(taskId))) return;
     const next = scheduleTaskDates(baseTasks, this.dependencies, taskId, start, end, mode, (resource, date) => this.isResourceWorkingDay(resource, date));
     this.tasks = buildTaskTree(next);
     this.requestUpdate();
@@ -2551,8 +2592,29 @@ export class GanttChart extends LitElement {
   }
 
   private editTaskName(task: GanttTask): void {
+    if (!this.isTaskEditable(task)) return;
     const value = window.prompt(this.t('name'), task.name);
     if (value !== null && value.trim() && value.trim() !== task.name) this.updateTask(task.id, { name: value.trim() });
+  }
+
+  /** Keeps the grid gesture independent from the timeline-bar double-click action. */
+  private handleTaskGridDoubleClick(task: GanttTask): void {
+    switch (this.options.taskGridDoubleClickAction ?? 'rename') {
+      case 'edit':
+        this.openTaskEditor(task.id);
+        break;
+      case 'rename':
+        this.editTaskName(task);
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** Opens the editor from a timeline bar without changing the grid double-click behaviour. */
+  private openTaskEditorFromBar(task: GanttTask, event: MouseEvent): void {
+    event.stopPropagation();
+    if (this.options.openTaskEditorOnDoubleClick && this.isTaskEditable(task)) this.openTaskEditor(task.id);
   }
 
   private deleteSelected = (): void => { if (this.selectedTaskId) void this.deleteTask(this.selectedTaskId, 'toolbar'); };
@@ -2586,6 +2648,12 @@ export class GanttChart extends LitElement {
   private findTask(taskId: string | null): GanttTask | null {
     if (!taskId) return null;
     return this.getFlatTasks().find(task => task.id === taskId) || null;
+  }
+
+  /** Centralises task-level locks for every built-in editing interaction. */
+  private isTaskEditable(task: GanttTask | null): boolean {
+    if (!task) return false;
+    return task.editable !== false && this.options.isTaskEditable?.(task) !== false;
   }
 
   private getDepth(task: GanttTask): number {
@@ -2973,7 +3041,7 @@ export class GanttChart extends LitElement {
 
   addResource(taskId: string, resource: Partial<GanttResource> = {}): GanttResource | null {
     const task = this.findTask(taskId);
-    if (!task) return null;
+    if (!task || !this.isTaskEditable(task)) return null;
     const totalQuantity = resource.totalQuantity ?? resource.quantity ?? 1;
     const created: GanttResource = {
       id: resource.id || this.createId(),
@@ -3000,6 +3068,7 @@ export class GanttChart extends LitElement {
   }
 
   private updateResource(taskId: string, resourceId: string, field: keyof GanttResource, value: unknown): void {
+    if (!this.isTaskEditable(this.findTask(taskId))) return;
     const next = this.getFlatTasks().map(task => {
       if (task.id !== taskId) return task;
       const resources = (task.resources || []).map(resource => {
@@ -3020,6 +3089,7 @@ export class GanttChart extends LitElement {
   }
 
   private updateResourcePatch(taskId: string, resourceId: string, patch: Partial<GanttResource>): void {
+    if (!this.isTaskEditable(this.findTask(taskId))) return;
     const next = this.getFlatTasks().map(task => task.id === taskId
       ? { ...task, resources: (task.resources || []).map(resource => resource.id === resourceId ? { ...resource, ...patch } : resource) }
       : task);
@@ -3029,6 +3099,7 @@ export class GanttChart extends LitElement {
   /** Répartit une quantité totale sur tous les jours inclus dans la tâche.
    *  Les deux décimales sont conservées et le dernier jour absorbe l'éventuel écart d'arrondi. */
   private distributeResourceTotal(taskId: string, resourceId: string, rawValue: string): void {
+    if (!this.isTaskEditable(this.findTask(taskId))) return;
     const requestedTotal = Number(rawValue);
     const total = Number.isFinite(requestedTotal) && requestedTotal > 0 ? this.roundQuantity(requestedTotal) : 0;
     const next = this.getFlatTasks().map(task => {
@@ -3042,6 +3113,7 @@ export class GanttChart extends LitElement {
   }
 
   private updateResourceQuantity(taskId: string, resourceId: string, date: string, rawValue: string): void {
+    if (!this.isTaskEditable(this.findTask(taskId))) return;
     const value = Number(rawValue);
     const next = this.getFlatTasks().map(task => {
       if (task.id !== taskId) return task;
@@ -3059,6 +3131,8 @@ export class GanttChart extends LitElement {
   }
 
   private openResourceContextMenu(taskId: string, event: MouseEvent): void {
+    event.preventDefault();
+    if (!this.isTaskEditable(this.findTask(taskId))) return;
     const menuWidth = 220;
     const menuHeight = 48;
     this.taskTooltip = undefined;
@@ -3067,7 +3141,6 @@ export class GanttChart extends LitElement {
       x: Math.min(event.clientX, Math.max(8, window.innerWidth - menuWidth)),
       y: Math.min(event.clientY, Math.max(8, window.innerHeight - menuHeight)),
     };
-    event.preventDefault();
     this.requestUpdate();
   }
 
@@ -3247,7 +3320,7 @@ export class GanttChart extends LitElement {
 
   private addTaskAfter(taskId: string): void {
     const current = this.findTask(taskId);
-    if (!current) return;
+    if (!current || !this.isTaskEditable(current)) return;
     const flatTasks = this.getFlatTasks();
     const index = flatTasks.findIndex(task => task.id === taskId);
     const start = this.addDays(current.end, 1);
@@ -3271,7 +3344,7 @@ export class GanttChart extends LitElement {
 
   private openTaskEditor(taskId: string, tab: 'general' | 'resources' | 'links' = 'general'): void {
     const task = this.findTask(taskId);
-    if (!task) return;
+    if (!task || !this.isTaskEditable(task)) return;
     this.taskContextMenu = undefined;
     this.options.onTaskEdit?.(task);
     if (this.options.taskEditorMode === 'external') {
@@ -3290,7 +3363,7 @@ export class GanttChart extends LitElement {
 
   private openResourcePicker(taskId: string): void {
     const task = this.findTask(taskId);
-    if (!task) return;
+    if (!task || !this.isTaskEditable(task)) return;
     const hostPicker = this.options.resourcePicker;
     if (hostPicker) {
       try {
@@ -3395,6 +3468,7 @@ export class GanttChart extends LitElement {
   }
 
   private removeResource(taskId: string, resourceId: string): void {
+    if (!this.isTaskEditable(this.findTask(taskId))) return;
     const next = this.getFlatTasks().map(task => task.id === taskId ? { ...task, resources: (task.resources || []).filter(resource => resource.id !== resourceId) } : task);
     this.replaceFlatTasks(next, 'task-updated', taskId);
   }

@@ -46,3 +46,76 @@ describe('GanttChart task deletion', () => {
     expect(gantt.getData().tasks).toHaveLength(2);
   });
 });
+
+describe('GanttChart task-bar editing', () => {
+  let gantt: GanttChart;
+
+  beforeEach(async () => {
+    gantt = new GanttChart();
+    document.body.append(gantt);
+    gantt.setData(project);
+    await gantt.updateComplete;
+  });
+
+  afterEach(() => gantt.remove());
+
+  it('opens the task editor from a double-click on an editable Gantt bar', async () => {
+    gantt.options = { openTaskEditorOnDoubleClick: true };
+    await gantt.updateComplete;
+
+    const bar = gantt.shadowRoot?.querySelector<HTMLElement>('.task-bar[data-task-id="child"]');
+    expect(bar).not.toBeNull();
+    bar?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    await gantt.updateComplete;
+
+    expect(gantt.shadowRoot?.querySelector('.task-editor-dialog')).not.toBeNull();
+  });
+
+  it('routes a task-grid double-click to a host-owned editor', async () => {
+    const onTaskEdit = vi.fn();
+    gantt.options = {
+      taskGridDoubleClickAction: 'edit',
+      taskEditorMode: 'external',
+      onTaskEdit,
+    };
+    await gantt.updateComplete;
+
+    const row = gantt.shadowRoot?.querySelector<HTMLElement>('.task-row[data-task-id="child"]');
+    expect(row).not.toBeNull();
+    row?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+
+    expect(onTaskEdit).toHaveBeenCalledWith(expect.objectContaining({ id: 'child' }));
+    expect(gantt.shadowRoot?.querySelector('.task-editor-dialog')).toBeNull();
+  });
+
+  it('keeps a locked task read-only', async () => {
+    gantt.setData({
+      ...project,
+      tasks: project.tasks.map(task => task.id === 'child' ? { ...task, editable: false } : task),
+    });
+    gantt.options = { openTaskEditorOnDoubleClick: true };
+    await gantt.updateComplete;
+
+    const bar = gantt.shadowRoot?.querySelector<HTMLElement>('.task-bar[data-task-id="child"]');
+    expect(bar?.classList.contains('read-only')).toBe(true);
+    bar?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    await gantt.updateComplete;
+    expect(gantt.shadowRoot?.querySelector('.task-editor-dialog')).toBeNull();
+
+    gantt.updateTask('child', { progress: 75 });
+    expect(gantt.getData().tasks.find(task => task.id === 'child')?.progress).toBe(0);
+  });
+
+  it('locks and unlocks a task through the public API', () => {
+    expect(gantt.lockTask('child')).toBe(true);
+    expect(gantt.getData().tasks.find(task => task.id === 'child')?.editable).toBe(false);
+
+    gantt.updateTask('child', { progress: 75 });
+    expect(gantt.getData().tasks.find(task => task.id === 'child')?.progress).toBe(0);
+
+    expect(gantt.unlockTask('child')).toBe(true);
+    gantt.updateTask('child', { progress: 75 });
+    expect(gantt.getData().tasks.find(task => task.id === 'child')?.progress).toBe(75);
+    expect(gantt.lockTask('unknown')).toBe(false);
+  });
+});

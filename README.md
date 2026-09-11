@@ -460,18 +460,59 @@ The callback can use `updateTask`, `moveTask`, `addResource`, `removeResource`, 
 
 Set `openTaskEditorOnCreate: true` when newly created tasks should open this editor immediately, and `focusTaskOnCreate: true` to centre the new task in the timeline. The demo uses both options to offer single resource assignment through the catalogue and bulk assignment from reusable resource teams/work packages. The displayed “Suggested from the task name” section is a deterministic integration example; replace its keyword rules with a call to your AI or business recommendation service, then assign the returned `GanttResourceReference` objects through `addResource`.
 
+### Open the editor from a Gantt bar and lock tasks
+
+Set `openTaskEditorOnDoubleClick: true` to open the configured editor when the user double-clicks a **timeline bar**. The task grid keeps its existing double-click rename behaviour.
+
+The task grid has an independent action. It can keep renaming, open the component editor, or do nothing:
+
+```ts
+gantt.setOptions({
+  openTaskEditorOnDoubleClick: true,
+  taskGridDoubleClickAction: 'edit', // 'rename' (default) | 'edit' | 'none'
+});
+```
+
+To open a modal owned by the host application from a grid double-click, combine `edit` with the existing external editor hook:
+
+```ts
+gantt.setOptions({
+  taskGridDoubleClickAction: 'edit',
+  taskEditorMode: 'external',
+  onTaskEdit: task => hostTaskModal.open(task),
+});
+```
+
+Locked tasks do not invoke the editor or rename action.
+
+Each task can be locked directly in the portable project data. A locked task remains selectable and visible, but cannot be edited, dragged, resized, deleted, or have its resources changed through the component. The public lock methods also work on an already locked task, so an authorised host workflow can unlock it directly.
+
+```ts
+gantt.setOptions({
+  openTaskEditorOnDoubleClick: true,
+  // Optional business rule, evaluated in addition to task.editable.
+  isTaskEditable: task => task.metadata?.workflowState !== 'approved',
+});
+
+gantt.lockTask('task-42');
+gantt.unlockTask('task-42');
+```
+
+Custom task-editor and task-menu templates receive an `editable` flag. Their mutation callbacks are safe no-ops when that flag is `false`.
+
 ### Custom task right-click menu
 
-Set `taskContextMenuTemplate` to replace the default task menu. The template receives the complete `task`, including `type`, `fields` and `metadata`, so a host can choose a different menu for any business parameter without duplicating planning logic. The component blocks the browser's native right-click menu and keeps the main menu and its submenus inside the viewport.
+Set `taskContextMenuTemplate` to replace the default task menu. The template receives the Gantt instance as `gantt`, plus the complete `task`, including `type`, `fields` and `metadata`, so a host can choose a different menu for any business parameter without duplicating planning logic. The component blocks the browser's native right-click menu and keeps the main menu and its submenus inside the viewport.
 
 ```ts
 import { html } from 'lit';
 
 gantt.options = {
-  taskContextMenuTemplate: ({ task, close, updateTask, fitToView }) => task.metadata?.readOnly
+  taskContextMenuTemplate: ({ gantt, task, close, updateTask, fitToView }) => task.metadata?.readOnly
     ? html`<button @click=${() => { fitToView(); close(); }}>View ${task.name}</button>`
     : html`
     <button @click=${() => { updateTask({ progress: 100 }); close(); }}>Mark complete</button>
+    <button @click=${() => { gantt.lockTask(task.id); close(); }}>Lock task</button>
     <div class="gantt-context-submenu">
       <button class="gantt-context-submenu-trigger">Actions <span>›</span></button>
       <div class="gantt-context-submenu-panel">
@@ -504,6 +545,8 @@ Useful public editing methods for an external editor are:
 | Method | Purpose |
 | --- | --- |
 | `updateTask(taskId, patch)` | Change task fields, dates, parent or resources. |
+| `lockTask(taskId)` / `unlockTask(taskId)` | Persistently block or restore built-in editing for one task. Both return `false` if the task is unknown. |
+| `setTaskLocked(taskId, locked)` | Set the same lock state when it is known as a boolean. |
 | `addChildTask(parentId, task?)` | Create a child task. |
 | `addResource(taskId, resource?)` | Add an assignment to a task. |
 | `moveTask(taskId, parentId)` | Move a task to another parent. |
