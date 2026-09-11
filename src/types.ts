@@ -6,7 +6,17 @@
  * the server that stores it.
  */
 
-export type TaskType = 'task' | 'parent' | 'milestone';
+/** Runtime-safe task type constants for templates and host integrations. */
+export const TaskType = {
+  Task: 'task',
+  Parent: 'parent',
+  Milestone: 'milestone',
+} as const;
+
+// The type/value share a name intentionally: this keeps string-union compatibility
+// while also allowing templates to use the runtime constants as `TaskType.Task`.
+// eslint-disable-next-line no-redeclare
+export type TaskType = typeof TaskType[keyof typeof TaskType];
 
 /** Built-in colour theme exposed by the component's `theme` attribute. */
 export type GanttTheme = 'light' | 'dark';

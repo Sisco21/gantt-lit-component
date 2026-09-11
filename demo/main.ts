@@ -1,7 +1,7 @@
 import { html, nothing } from 'lit';
 import '../src/gantt-chart';
 import type { GanttChart } from '../src/gantt-chart';
-import { GanttColumnType } from '../src/types';
+import { GanttColumnType, TaskType } from '../src/types';
 import type { GanttColumnRenderContext, GanttColumnSettings, GanttData, GanttOptions, GanttProjectSummary, GanttResource, GanttResourceProvider, GanttResourceReference, GanttTask, GanttTaskDeleteContext, GanttTaskEditorTemplateContext, GanttTranslations } from '../src/types';
 import { formatDate } from '../src/utils';
 import sampleData from './data.json' with { type: 'json' };
@@ -320,13 +320,15 @@ function formatSignedCost(value: unknown): string {
   return `${sign}${new Intl.NumberFormat(getDemoLocale(), { maximumFractionDigits: 2 }).format(Math.abs(amount))} €`;
 }
 
-function deltaCellStyle({ value }: GanttColumnRenderContext): string {
+function deltaCellStyle({ task, value }: GanttColumnRenderContext): string {
+  if(task.type !== TaskType.Task) return ``;
   const isSaving = Number(value) < 0;
   const color = isSaving ? 'var(--gantt-green)' : 'var(--gantt-red)';
   return `color:${color}; background:color-mix(in srgb, ${color} 14%, transparent); font-weight:700; transition:color 140ms ease, background-color 140ms ease`;
 }
 
-function deltaCellTemplate({ formattedValue }: GanttColumnRenderContext) {
+function deltaCellTemplate({ task, formattedValue }: GanttColumnRenderContext) {
+  if(task.type !== TaskType.Task) return html``;
   return html`<span style="display:inline-flex; align-items:center; justify-content:flex-end; min-width:0; white-space:nowrap">${formattedValue}</span>`;
 }
 
