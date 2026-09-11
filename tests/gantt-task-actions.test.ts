@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { expandTaskAncestors, removeTaskBranch, reorderTaskBranch, setParentTasksCollapsed, toggleTaskCollapsed } from '../src/gantt-task-actions';
+import { expandTaskAncestors, outdentTaskBranch, removeTaskBranch, reorderTaskBranch, setParentTasksCollapsed, toggleTaskCollapsed } from '../src/gantt-task-actions';
 import type { GanttTask } from '../src/types';
 
 const task = (id: string, parentId: string | null, children?: GanttTask[]): GanttTask => ({ id, name: id, start: '2026-01-01', end: '2026-01-01', progress: 0, parentId, type: parentId ? 'task' : 'parent', children });
@@ -30,5 +30,17 @@ describe('Gantt task actions', () => {
 
     expect(reorderTaskBranch(flat, 'design', 'research', 'before')?.map(item => item.id)).toEqual(['phase', 'design', 'brief', 'research', 'release']);
     expect(reorderTaskBranch(flat, 'research', 'design', 'after')?.map(item => item.id)).toEqual(['phase', 'design', 'brief', 'research', 'release']);
+  });
+
+  it('outdents a branch after its current parent branch', () => {
+    const flat = [task('phase', null), task('research', 'phase'), task('design', 'phase'), task('brief', 'design'), task('release', 'phase')];
+    const result = outdentTaskBranch(flat, 'brief');
+
+    expect(result?.map(item => item.id)).toEqual(['phase', 'research', 'design', 'brief', 'release']);
+    expect(result?.find(item => item.id === 'brief')?.parentId).toBe('phase');
+  });
+
+  it('does not outdent a root task', () => {
+    expect(outdentTaskBranch([task('phase', null)], 'phase')).toBeNull();
   });
 });

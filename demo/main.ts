@@ -22,7 +22,7 @@ const DEMO_UI = {
     calendarDays: 'calendar days', workingDays: 'working days', tasks: 'Tasks', phases: 'Phases', milestones: 'Milestones', overdue: 'overdue', next: 'Next', total: 'Total', actual: 'Actual', load: 'Load', capacity: 'Capacity',
     weekUpdated: 'Week: {weekStart} — {weekNumbering}', jsonLoaded: 'JSON file loaded: {name}', projectLoaded: 'Project loaded: {name}', invalidJson: 'Invalid JSON file', invalidProject: 'Invalid project file', sampleLoaded: 'Sample data loaded', generatingLarge: 'Generating {count} tasks and their dependencies…', largeLoaded: 'Large sample loaded: {count} tasks in {elapsed} ms', ganttReset: 'Gantt reset', componentReady: 'Gantt component ready', styleApplied: '{style} style applied', deleteConfirm: 'Delete “{name}”?', deleteChildren: 'This will also delete {count} child task{suffix}.',
     addTaskOn: '＋ Add task on {date}', addPhaseOn: '＋ Add phase on {date}', fitSchedule: 'Fit schedule {date}', close: 'Close', editPhase: '✎ Edit phase', fitPhase: 'Fit phase', addPhaseTask: '＋ Add phase task', deletePhase: 'Delete phase', editTask: '✎ Edit task', setProgress0: 'Set progress to 0%', setProgress50: 'Set progress to 50%', markComplete: 'Mark as complete', fitTask: 'Fit {name}', addTaskAfter: '＋ Add task after', logTask: 'Log task', deleteTask: 'Delete task',
-    daysShort: 'd', days: 'days', cost: 'Cost', actualCost: 'Actual cost', totalCost: 'Total cost', costCoefficient: 'Cost × coefficient', delta: 'Delta', taskName: 'Task name', code: 'Code', name: 'Name', type: 'Type', calendar: 'Calendar', unitPrice: 'PU', quantity: 'Q', totalQuantity: 'Total quantity', coefficient: 'Coefficient', actualCostVariance: 'Actual cost variance',
+    daysShort: 'd', days: 'days', cost: 'Cost', actualCost: 'Actual cost', totalCost: 'Total cost', costCoefficient: 'Cost × coefficient', delta: 'Delta', taskName: 'Task name', code: 'Code', name: 'Name', type: 'Type', unit: 'Unit of work', calendar: 'Calendar', unitPrice: 'PU', quantity: 'Q', totalQuantity: 'Total quantity', coefficient: 'Coefficient', actualCostVariance: 'Actual cost variance',
   },
   fr: {
     locale: 'fr-FR', language: 'Langue', ganttTitle: 'Composant de diagramme de Gantt', ganttSubtitle: 'Composant Lit réutilisable avec tâches parentes, glisser-déposer et couleurs personnalisées', importJson: '📥 Importer JSON', importProject: '📥 Importer MS Project', loadSample: '📋 Charger exemple', largeSample: 'Grand exemple · 1 550 tâches', reset: '🔄 Réinitialiser',
@@ -33,7 +33,7 @@ const DEMO_UI = {
     calendarDays: 'jours calendaires', workingDays: 'jours travaillés', tasks: 'Tâches', phases: 'Phases', milestones: 'Jalons', overdue: 'en retard', next: 'Prochaine', total: 'Total', actual: 'Réel', load: 'Charge', capacity: 'Capacité',
     weekUpdated: 'Semaine : {weekStart} — {weekNumbering}', jsonLoaded: 'Fichier JSON chargé : {name}', projectLoaded: 'Projet chargé : {name}', invalidJson: 'Fichier JSON invalide', invalidProject: 'Fichier projet invalide', sampleLoaded: 'Exemple chargé', generatingLarge: 'Génération de {count} tâches et de leurs dépendances…', largeLoaded: 'Grand exemple chargé : {count} tâches en {elapsed} ms', ganttReset: 'Gantt réinitialisé', componentReady: 'Composant Gantt prêt', styleApplied: 'Style {style} appliqué', deleteConfirm: 'Supprimer « {name} » ?', deleteChildren: 'Cette action supprimera aussi {count} tâche{suffix} enfant.',
     addTaskOn: '＋ Ajouter une tâche le {date}', addPhaseOn: '＋ Ajouter une phase le {date}', fitSchedule: 'Ajuster le planning {date}', close: 'Fermer', editPhase: '✎ Modifier la phase', fitPhase: 'Ajuster la phase', addPhaseTask: '＋ Ajouter une tâche de phase', deletePhase: 'Supprimer la phase', editTask: '✎ Modifier la tâche', setProgress0: 'Mettre l’avancement à 0 %', setProgress50: 'Mettre l’avancement à 50 %', markComplete: 'Marquer comme terminée', fitTask: 'Ajuster {name}', addTaskAfter: '＋ Ajouter une tâche après', logTask: 'Journaliser la tâche', deleteTask: 'Supprimer la tâche',
-    daysShort: 'j', days: 'jours', cost: 'Coût', actualCost: 'Coût réel', totalCost: 'Coût total', costCoefficient: 'Coût × coefficient', delta: 'Écart', taskName: 'Nom de la tâche', code: 'Code', name: 'Nom', type: 'Type', calendar: 'Calendrier', unitPrice: 'PU', quantity: 'Q', totalQuantity: 'Quantité totale', coefficient: 'Coefficient', actualCostVariance: 'Écart de coût réel',
+    daysShort: 'j', days: 'jours', cost: 'Coût', actualCost: 'Coût réel', totalCost: 'Coût total', costCoefficient: 'Coût × coefficient', delta: 'Écart', taskName: 'Nom de la tâche', code: 'Code', name: 'Nom', type: 'Type', unit: 'Unité d’œuvre', calendar: 'Calendrier', unitPrice: 'PU', quantity: 'Q', totalQuantity: 'Quantité totale', coefficient: 'Coefficient', actualCostVariance: 'Écart de coût réel',
   },
 } as const;
 
@@ -209,6 +209,7 @@ function createLargeDemoProject(): GanttData {
           id: `resource-${id}`,
           name: taskIndex % 2 ? 'Installation crew' : 'Site equipment',
           type: 'work',
+          unit: taskIndex % 2 ? 'day' : 'unit',
           unitCost: taskIndex % 2 ? 68 : 115,
           quantity: 1,
           maxUnits: taskIndex % 2 ? 4 : 2,
@@ -430,11 +431,11 @@ const demoOptions: GanttOptions = {
   resourceColumns: [
     { key: 'name', label: demoText('name'), width: 150, editable: true },
     { key: 'type', label: demoText('type'), width: 105, editable: true },
+    { key: 'unit', label: demoText('unit'), width: 105, editable: true },
     { key: 'calendarId', label: demoText('calendar'), width: 145, editable: true },
     { key: 'maxUnits', label: demoText('capacity'), width: 80, type: GanttColumnType.Integer, editable: true },
     { key: 'unitCost', label: demoText('unitPrice'), width: 75, type: GanttColumnType.Decimal, editable: true },
-    { key: 'quantity', label: demoText('quantity'), width: 65, type: GanttColumnType.Integer, editable: true },
-    { key: 'totalQuantity', label: demoText('totalQuantity'), width: 90, type: GanttColumnType.Integer, editable: true },
+    { key: 'quantity', label: demoText('quantity'), width: 90, type: GanttColumnType.Integer, editable: true },
     {
       key: 'coefficient',
       label: demoText('coefficient'),
@@ -464,7 +465,7 @@ const taskColumnTranslationKeys: Record<string, DemoTextKey> = {
 };
 
 const resourceColumnTranslationKeys: Record<string, DemoTextKey> = {
-  name: 'name', type: 'type', calendarId: 'calendar', maxUnits: 'capacity', unitCost: 'unitPrice', quantity: 'quantity', totalQuantity: 'totalQuantity', coefficient: 'coefficient', costWithCoefficient: 'costCoefficient',
+  name: 'name', type: 'type', unit: 'unit', calendarId: 'calendar', maxUnits: 'capacity', unitCost: 'unitPrice', quantity: 'quantity', coefficient: 'coefficient', costWithCoefficient: 'costCoefficient',
 };
 
 function getLocalizedDemoOptions(): GanttOptions {

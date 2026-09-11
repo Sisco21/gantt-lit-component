@@ -51,6 +51,34 @@ export function moveTaskParent(tasks: GanttTask[], taskId: string, parentId: str
   return tasks.map(task => task.id === taskId ? { ...task, parentId } : task);
 }
 
+/**
+ * Moves a task branch one level up in the outline.
+ *
+ * The branch is inserted after the complete branch of its current parent so
+ * that the outline remains contiguous and the task keeps its relative order.
+ */
+export function outdentTaskBranch(tasks: GanttTask[], taskId: string): GanttTask[] | null {
+  const movingTask = tasks.find(task => task.id === taskId);
+  if (!movingTask?.parentId) return null;
+
+  const currentParent = tasks.find(task => task.id === movingTask.parentId);
+  if (!currentParent) return null;
+
+  const movingIds = getTaskSubtreeIds(taskId, tasks);
+  const movingTasks = tasks.filter(task => movingIds.has(task.id));
+  const remainingTasks = tasks.filter(task => !movingIds.has(task.id));
+  const parentIndex = remainingTasks.findIndex(task => task.id === currentParent.id);
+  if (parentIndex < 0 || !movingTasks.length) return null;
+
+  const parentSubtreeIds = getTaskSubtreeIds(currentParent.id, remainingTasks);
+  let insertIndex = parentIndex + 1;
+  while (insertIndex < remainingTasks.length && parentSubtreeIds.has(remainingTasks[insertIndex].id)) insertIndex += 1;
+
+  const reorderedBranch = [{ ...movingTasks[0], parentId: currentParent.parentId }, ...movingTasks.slice(1)];
+  remainingTasks.splice(insertIndex, 0, ...reorderedBranch);
+  return remainingTasks;
+}
+
 export function reorderTaskBranch(
   tasks: GanttTask[],
   taskId: string,

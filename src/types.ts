@@ -53,6 +53,7 @@ export interface GanttTask {
   /** Optional planning columns commonly used by Microsoft Project-like views. */
   mode?: string;
   code?: string;
+  /** Unit of work used by this assignment, for example `day`, `hour`, `m³` or `unit`. */
   unit?: string;
   unitCost?: number;
   quantity?: number;
@@ -77,6 +78,7 @@ export interface GanttResource {
   resourceId?: string;
   name: string;
   type: GanttResourceType | string;
+  /** Unit of work used by the external catalogue, for example `day`, `hour` or `unit`. */
   unit?: string;
   unitCost: number;
   quantity: number;
@@ -86,6 +88,7 @@ export interface GanttResource {
   maxUnits?: number;
   /** Quantities keyed by YYYY-MM-DD. A missing/zero day creates a visible gap. */
   quantityByDate?: Record<string, number>;
+  /** @deprecated Use `quantity`; retained when reading older project snapshots. */
   totalQuantity?: number;
   cost?: number;
   metadata?: Record<string, GanttFieldValue>;
@@ -386,6 +389,9 @@ export interface GanttTranslations {
   today: string;
   resources: string;
   cost: string;
+  unit: string;
+  unitCost: string;
+  quantity: string;
   totalQuantity: string;
   addResource: string;
   editTask: string;

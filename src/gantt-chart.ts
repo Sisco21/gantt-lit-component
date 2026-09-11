@@ -75,7 +75,7 @@ import { scheduleInitialDependencies, scheduleTaskDates } from './gantt-scheduli
 import { calculateProjectSummary } from './gantt-summary';
 import { flattenTaskTree, getTaskDepths, getTaskOutlineCodes, getTaskSubtreeIds } from './gantt-task-tree';
 import { calculateTaskCosts } from './gantt-task-costs';
-import { expandTaskAncestors, moveTaskParent, removeTaskBranch, reorderTaskBranch, setParentTasksCollapsed, toggleTaskCollapsed } from './gantt-task-actions';
+import { expandTaskAncestors, moveTaskParent, outdentTaskBranch, removeTaskBranch, reorderTaskBranch, setParentTasksCollapsed, toggleTaskCollapsed } from './gantt-task-actions';
 
 const ROW_HEIGHT = 42;
 const HEADER_HEIGHT = 58;
@@ -84,6 +84,7 @@ const HEADER_HEIGHT = 58;
 export const GANTT_COMPONENT_VERSION = '1.1.0';
 
 type DefaultTaskColumn = Omit<GanttColumn, 'label'> & { labelKey: keyof GanttTranslations };
+type DefaultResourceColumn = Omit<GanttResourceColumn, 'label'> & { labelKey: keyof GanttTranslations };
 
 const DEFAULT_TASK_COLUMNS: DefaultTaskColumn[] = [
   { key: 'mode', labelKey: 'mode', width: 38 },
@@ -95,13 +96,13 @@ const DEFAULT_TASK_COLUMNS: DefaultTaskColumn[] = [
   { key: 'costTotal', labelKey: 'totalCost', width: 78, type: 'number' },
 ];
 
-const DEFAULT_RESOURCE_COLUMNS: GanttResourceColumn[] = [
-  { key: 'name', label: 'Name', width: 150, editable: true },
-  { key: 'type', label: 'Type', width: 105, editable: true },
-  { key: 'unitCost', label: 'PU', width: 75, type: 'number', editable: true },
-  { key: 'quantity', label: 'Q', width: 65, type: 'number', editable: true },
-  { key: 'totalQuantity', label: 'Total quantity', width: 85, type: 'number', editable: true },
-  { key: 'cost', label: 'Cost', width: 78, type: 'number' },
+const DEFAULT_RESOURCE_COLUMNS: DefaultResourceColumn[] = [
+  { key: 'name', labelKey: 'name', width: 150, editable: true },
+  { key: 'type', labelKey: 'type', width: 105, editable: true },
+  { key: 'unit', labelKey: 'unit', width: 105, editable: true },
+  { key: 'unitCost', labelKey: 'unitCost', width: 75, type: 'number', editable: true },
+  { key: 'quantity', labelKey: 'quantity', width: 105, type: 'number', editable: true },
+  { key: 'cost', labelKey: 'cost', width: 78, type: 'number' },
 ];
 
 /**
@@ -408,6 +409,7 @@ export class GanttChart extends LitElement {
     .task-row.alt, .timeline-row.alt { background-color: var(--gantt-row-alt); }
     .task-row:hover, .task-row.selected { background-color: var(--gantt-selection); color: var(--gantt-selection-foreground); }
     .task-row.drop-inside { box-shadow: inset 0 0 0 2px #60a5fa; }
+    .task-row.drop-outdent { box-shadow: inset 4px 0 0 #60a5fa, inset 0 0 0 1px #60a5fa; }
     .task-row.drop-before::before, .task-row.drop-after::after { position: absolute; right: 0; left: 0; z-index: 6; height: 2px; content: ''; background: #60a5fa; pointer-events: none; }
     .task-row.drop-before::before { top: -1px; }
     .task-row.drop-after::after { bottom: -1px; }
@@ -495,13 +497,13 @@ export class GanttChart extends LitElement {
     .resource-context-backdrop { position: fixed; inset: 0; z-index: 90; pointer-events: none; }
     .resource-context-menu { position: fixed; z-index: 91; min-width: 190px; padding: 5px; border: 1px solid var(--gantt-control-border); border-radius: 6px; background: var(--gantt-surface); box-shadow: 0 8px 24px rgb(15 23 42 / 18%); }
     .resource-context-menu button { width: 100%; border: 0; text-align: left; }
-    .task-context-menu { position: fixed; z-index: 91; min-width: 180px; padding: 5px; border: 1px solid var(--gantt-control-border); border-radius: 6px; background: var(--gantt-surface); box-shadow: 0 8px 24px rgb(15 23 42 / 18%); overflow: visible; }
-    .task-context-menu > button, .gantt-context-submenu-trigger { width: 100%; border: 0; text-align: left; }
+    .task-context-menu { position: fixed; z-index: 91; box-sizing: border-box; width: var(--gantt-context-menu-width, 160px); min-width: 0; max-width: min(320px, calc(100vw - 16px)); padding: 5px; border: 1px solid var(--gantt-control-border); border-radius: 6px; background: var(--gantt-surface); box-shadow: 0 8px 24px rgb(15 23 42 / 18%); overflow: visible; }
+    .task-context-menu > button, .gantt-context-submenu-trigger { width: 100%; min-width: 0; overflow-wrap: anywhere; border: 0; text-align: left; white-space: normal; }
     .gantt-context-submenu { position: relative; }
     .gantt-context-submenu-trigger { display: flex; justify-content: space-between; gap: 16px; }
-    .gantt-context-submenu-panel { position: absolute; top: -5px; left: calc(100% + 5px); display: none; box-sizing: border-box; width: 180px; padding: 5px; border: 1px solid var(--gantt-control-border); border-radius: 6px; background: var(--gantt-surface); box-shadow: 0 8px 24px rgb(15 23 42 / 18%); }
-    .gantt-context-submenu-panel button { width: 100%; border: 0; text-align: left; }
-    .gantt-context-submenu:hover .gantt-context-submenu-panel, .gantt-context-submenu:focus-within .gantt-context-submenu-panel { display: block; }
+    .gantt-context-submenu-panel { position: absolute; top: -5px; left: 100%; display: none; box-sizing: border-box; width: var(--gantt-context-submenu-width, 160px); padding: 5px; border: 1px solid var(--gantt-control-border); border-radius: 6px; background: var(--gantt-surface); box-shadow: 0 8px 24px rgb(15 23 42 / 18%); }
+    .gantt-context-submenu-panel button { width: 100%; overflow-wrap: anywhere; border: 0; text-align: left; white-space: normal; }
+    .gantt-context-submenu:hover .gantt-context-submenu-panel, .gantt-context-submenu:focus-within .gantt-context-submenu-panel, .gantt-context-submenu.open .gantt-context-submenu-panel { display: block; }
     .task-editor-backdrop { position: fixed; inset: 0; z-index: 100; background: rgb(15 23 42 / 28%); }
     .task-editor-dialog { position: fixed; top: 50%; left: 50%; z-index: 101; display: flex; flex-direction: column; width: min(760px, calc(100vw - 32px)); max-height: min(690px, calc(100vh - 32px)); overflow: hidden; border: 1px solid var(--gantt-control-border); border-radius: 10px; background: var(--gantt-surface); box-shadow: 0 20px 50px rgb(15 23 42 / 28%); transform: translate(-50%, -50%); }
     .resource-picker-backdrop { position: fixed; inset: 0; z-index: 102; background: rgb(15 23 42 / 28%); }
@@ -637,6 +639,7 @@ export class GanttChart extends LitElement {
   private resourceContextMenu?: { taskId: string; x: number; y: number };
   private ganttContextMenu?: { x: number; y: number; date: string };
   private taskContextMenu?: { taskId: string; x: number; y: number };
+  private taskContextSubmenuOpen = false;
   private taskTooltip?: { taskId: string; color: string; kind: GanttTaskBarKind; x: number; y: number };
   private taskEditorId?: string;
   private taskEditorTab: 'general' | 'resources' | 'links' = 'general';
@@ -663,7 +666,7 @@ export class GanttChart extends LitElement {
   private resourcePanelHeight = 260;
   private splitUserResized = false;
   private draggedTaskId: string | null = null;
-  private taskDropTarget?: { taskId: string; position: 'before' | 'inside' | 'after' };
+  private taskDropTarget?: { taskId: string; position: 'before' | 'inside' | 'after' | 'outdent' };
   private renderTaskIndex = new Map<string, GanttTask>();
   private renderTaskDepths = new Map<string, number>();
   private renderTaskCodes = new Map<string, string>();
@@ -744,6 +747,9 @@ export class GanttChart extends LitElement {
       }
     }
     if (changed.has('taskColors')) this.applyColors();
+    if (this.taskContextMenu && this.taskContextSubmenuOpen) {
+      this.renderRoot.querySelector<HTMLElement>('.gantt-context-submenu')?.classList.add('open');
+    }
   }
 
   render() {
@@ -1216,6 +1222,13 @@ export class GanttChart extends LitElement {
     this.replaceFlatTasks(reorderedTasks, 'task-moved', taskId);
   }
 
+  /** Moves a task branch one level out of its current parent. */
+  private outdentTask(taskId: string): void {
+    const outdentedTasks = outdentTaskBranch(this.getFlatTasks(), taskId);
+    if (!outdentedTasks) return;
+    this.replaceFlatTasks(outdentedTasks, 'task-moved', taskId);
+  }
+
   addDependency(from: string, to: string, type: GanttDependency['type'] = 'finish-to-start'): void {
     if (!from || !to || from === to || !this.findTask(from) || !this.findTask(to)) return;
     if (this.dependencies.some(dependency => dependency.from === from && dependency.to === to)) return;
@@ -1349,8 +1362,8 @@ export class GanttChart extends LitElement {
     const formattedValue = this.formatResourceColumnValue(value, column, resource, task);
     const context: GanttResourceColumnRenderContext = { resource, task, value, formattedValue };
     const tooltip = this.getResourceColumnTooltip(column, context);
-    if (column.key === 'totalQuantity') {
-      return html`<div class="resource-cell total"><input type="number" min=${ifDefined(this.getResourceColumnMin(column))} .step=${this.getResourceColumnStepProperty(column)} value=${value ?? 0} title=${ifDefined(tooltip)} aria-label="${this.t('totalQuantity')} ${resource.name}" @change=${(event: Event) => this.distributeResourceTotal(task.id, resource.id, (event.target as HTMLInputElement).value)} /></div>`;
+    if (column.key === 'quantity' || column.key === 'totalQuantity') {
+      return html`<div class="resource-cell total"><input type="number" min=${ifDefined(this.getResourceColumnMin(column))} .step=${this.getResourceColumnStepProperty(column)} value=${value ?? 0} title=${ifDefined(tooltip)} aria-label="${this.t('quantity')} ${resource.name}" @change=${(event: Event) => this.distributeResourceTotal(task.id, resource.id, (event.target as HTMLInputElement).value)} /></div>`;
     }
     if (column.key === 'calendarId' && column.editable) {
       return html`<div class="resource-cell"><select .value=${resource.calendarId || ''} title=${ifDefined(tooltip)} aria-label=${this.tFormat('resourceCalendarFor', { name: resource.name })} @change=${(event: Event) => this.updateResource(task.id, resource.id, 'calendarId', (event.target as HTMLSelectElement).value || undefined)}><option value="">${this.t('resource')}</option>${this.calendars.map(calendar => html`<option value=${calendar.id}>${calendar.name}</option>`)}</select></div>`;
@@ -1370,7 +1383,7 @@ export class GanttChart extends LitElement {
       case 'name': return resource.name;
       case 'type': return resource.type;
       case 'unitCost': return resource.unitCost;
-      case 'quantity': return resource.quantity;
+      case 'quantity': return this.getResourceTotalQuantity(resource);
       case 'calendarId': return this.getResourceCalendarLabel(resource);
       case 'maxUnits': return resource.maxUnits;
       case 'totalQuantity': return this.getResourceTotalQuantity(resource);
@@ -1462,7 +1475,7 @@ export class GanttChart extends LitElement {
     const template = this.options.taskContextMenuTemplate;
     return html`
       <div class="resource-context-backdrop" @click=${this.closeTaskContextMenu}></div>
-      <div class="task-context-menu" role="menu" style="left:${menu.x}px; top:${menu.y}px" @mouseover=${this.positionTaskContextSubmenu} @focusin=${this.positionTaskContextSubmenu} @click=${(event: Event) => event.stopPropagation()}>
+      <div class="task-context-menu" role="menu" style="left:${menu.x}px; top:${menu.y}px" @mouseover=${this.positionTaskContextSubmenu} @focusin=${this.positionTaskContextSubmenu} @click=${this.handleTaskContextMenuClick}>
         ${template ? template(this.getTaskContextMenuTemplateContext(task)) : html`
           <button @click=${() => this.openTaskEditor(menu.taskId)}>✎ ${this.t('editTask')}</button>
           <button @click=${this.addTaskAfterContext}>＋ ${this.t('addTaskAfter')}</button>
@@ -2370,17 +2383,28 @@ export class GanttChart extends LitElement {
     if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
   }
 
+  /** The left gutter is an explicit, easy-to-hit drop target for one-level outdenting. */
+  private isTaskOutdentDrop(event: DragEvent, row: HTMLElement, taskId: string): boolean {
+    if (!this.findTask(taskId)?.parentId) return false;
+    const nameCell = row.querySelector<HTMLElement>('.task-cell.name');
+    const bounds = (nameCell || row).getBoundingClientRect();
+    const gutterWidth = Math.min(44, Math.max(28, bounds.width * 0.15));
+    return event.clientX <= bounds.left + gutterWidth;
+  }
+
   private handleDragOver(event: DragEvent, targetTaskId: string): void {
     const taskId = this.draggedTaskId;
-    if (!taskId || taskId === targetTaskId || this.isDescendant(targetTaskId, taskId)) return;
+    if (!taskId || this.isDescendant(targetTaskId, taskId)) return;
     const target = this.findTask(targetTaskId);
     if (!target) return;
+    const row = event.currentTarget as HTMLElement;
+    const outdent = this.isTaskOutdentDrop(event, row, taskId);
+    if (taskId === targetTaskId && !outdent) return;
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-    const row = event.currentTarget as HTMLElement;
     const bounds = row.getBoundingClientRect();
     const offset = Math.max(0, Math.min(bounds.height, event.clientY - bounds.top));
-    const position = target.type === 'parent'
+    const position = outdent ? 'outdent' : target.type === 'parent'
       ? (offset < bounds.height * 0.25 ? 'before' : offset > bounds.height * 0.75 ? 'after' : 'inside')
       : this.getRelativeTaskDropPosition(taskId, targetTaskId);
     if (this.taskDropTarget?.taskId !== targetTaskId || this.taskDropTarget.position !== position) {
@@ -2398,7 +2422,8 @@ export class GanttChart extends LitElement {
     this.draggedTaskId = null;
     this.clearTaskDropTarget();
     if (!taskId) return;
-    if (position === 'inside') this.moveTask(taskId, targetTaskId);
+    if (position === 'outdent') this.outdentTask(taskId);
+    else if (position === 'inside') this.moveTask(taskId, targetTaskId);
     else this.reorderTask(taskId, targetTaskId, position);
   }
 
@@ -2589,7 +2614,8 @@ export class GanttChart extends LitElement {
   }
 
   private getConfiguredResourceColumns(): GanttResourceColumn[] {
-    return this.options.resourceColumns?.length ? this.options.resourceColumns : DEFAULT_RESOURCE_COLUMNS;
+    if (this.options.resourceColumns?.length) return this.options.resourceColumns;
+    return DEFAULT_RESOURCE_COLUMNS.map(({ labelKey, ...column }) => ({ ...column, label: this.t(labelKey) }));
   }
 
   private getColumnWidth(column: GanttColumn): number {
@@ -3032,6 +3058,7 @@ export class GanttChart extends LitElement {
   private openResourceContextMenu(taskId: string, event: MouseEvent): void {
     const menuWidth = 220;
     const menuHeight = 48;
+    this.taskTooltip = undefined;
     this.resourceContextMenu = {
       taskId,
       x: Math.min(event.clientX, Math.max(8, window.innerWidth - menuWidth)),
@@ -3066,8 +3093,10 @@ export class GanttChart extends LitElement {
 
   private openGanttContextMenu(event: MouseEvent): void {
     const margin = 8;
+    this.taskTooltip = undefined;
     this.resourceContextMenu = undefined;
     this.taskContextMenu = undefined;
+    this.taskContextSubmenuOpen = false;
     this.ganttContextMenu = {
       x: Math.max(margin, Math.min(event.clientX, window.innerWidth - margin)),
       y: Math.max(margin, Math.min(event.clientY, window.innerHeight - margin)),
@@ -3081,6 +3110,7 @@ export class GanttChart extends LitElement {
   private closeGanttContextMenu = (): void => {
     if (!this.ganttContextMenu) return;
     this.ganttContextMenu = undefined;
+    this.taskContextSubmenuOpen = false;
     this.requestUpdate();
   };
 
@@ -3107,8 +3137,10 @@ export class GanttChart extends LitElement {
 
   private openTaskContextMenu(taskId: string, event: MouseEvent): void {
     const margin = 8;
+    this.taskTooltip = undefined;
     this.resourceContextMenu = undefined;
     this.ganttContextMenu = undefined;
+    this.taskContextSubmenuOpen = false;
     this.taskContextMenu = {
       taskId,
       x: Math.max(margin, Math.min(event.clientX, window.innerWidth - margin)),
@@ -3146,9 +3178,9 @@ export class GanttChart extends LitElement {
     const margin = 8;
     const triggerBounds = submenu.getBoundingClientRect();
     const panelBounds = panel.getBoundingClientRect();
-    let left = triggerBounds.right + 5;
+    let left = triggerBounds.right;
     if (left + panelBounds.width > window.innerWidth - margin) {
-      left = triggerBounds.left - panelBounds.width - 5;
+      left = triggerBounds.left - panelBounds.width;
     }
     left = Math.max(margin, Math.min(left, window.innerWidth - margin - panelBounds.width));
     let top = triggerBounds.top - 5;
@@ -3164,6 +3196,25 @@ export class GanttChart extends LitElement {
     panel.style.display = '';
   };
 
+  /** Keeps a custom submenu open after its trigger is clicked. */
+  private handleTaskContextMenuClick = (event: Event): void => {
+    event.stopPropagation();
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const trigger = target.closest<HTMLElement>('.gantt-context-submenu-trigger');
+    if (!trigger) return;
+    const submenu = trigger.closest<HTMLElement>('.gantt-context-submenu');
+    if (!submenu) return;
+
+    const willOpen = !submenu.classList.contains('open');
+    this.renderRoot.querySelectorAll<HTMLElement>('.gantt-context-submenu.open').forEach(openSubmenu => {
+      openSubmenu.classList.remove('open');
+    });
+    this.taskContextSubmenuOpen = willOpen;
+    submenu.classList.toggle('open', willOpen);
+    if (willOpen) this.positionTaskContextSubmenu(event);
+  };
+
   private preventNativeContextMenu = (event: MouseEvent): void => {
     event.preventDefault();
   };
@@ -3174,12 +3225,14 @@ export class GanttChart extends LitElement {
     this.resourceContextMenu = undefined;
     this.ganttContextMenu = undefined;
     this.taskContextMenu = undefined;
+    this.taskContextSubmenuOpen = false;
     this.requestUpdate();
   };
 
   private closeTaskContextMenu = (): void => {
     if (!this.taskContextMenu) return;
     this.taskContextMenu = undefined;
+    this.taskContextSubmenuOpen = false;
     this.requestUpdate();
   };
 

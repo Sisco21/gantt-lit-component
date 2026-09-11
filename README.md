@@ -315,6 +315,8 @@ gantt.autoSave = true;
 
 Resources assigned to a task are project data. A resource catalogue is external reference data and is loaded on demand through `GanttResourceProvider`. This keeps the component independent from your API and authentication model.
 
+Each resource assignment includes an optional `unit` field representing its unit of work, such as `day`, `hour`, `m³` or `unit`. The built-in resource grid displays this value as **Unit of work** and exposes one quantity field only: **Quantity**. That field represents the calculated total after daily quantities and working calendars have been applied. The legacy `totalQuantity` field is still accepted when reading older project snapshots but is no longer displayed.
+
 ```ts
 import type { GanttResourceProvider } from 'gantt-lit-component';
 
@@ -535,6 +537,8 @@ Set `enabled: false` to turn the feature off, `showControls: false` to keep only
 ### Reorder tasks from the tree
 
 Drag a row onto the upper quarter of a phase to place it **before**, or onto the lower quarter to place it **after**. Dropping in the middle of a phase makes the dragged task a child of that phase. On a regular task, the component always performs a sibling reorder: a task dragged downward goes **after** its target, while a task dragged upward goes **before** it. It never creates a parent-child relationship between two tasks. A moved task keeps its type (`task`, `parent`, or `milestone`) and carries all of its descendants with it.
+
+To move a nested task out of its current parent, drag it to the left gutter of any task row in the name column. The highlighted blue left edge indicates the **outdent** action; releasing moves the complete task branch one level up, after the current parent branch. This also works when dropping back on the dragged row, which is useful when a task has no convenient sibling target.
 
 The same sibling reordering is available to an external editor:
 
