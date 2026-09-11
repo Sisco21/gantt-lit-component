@@ -151,6 +151,7 @@ export class GanttChart extends LitElement {
       --gantt-task: #26966f;
       --gantt-milestone: #dc5b65;
       --gantt-dependency: #3b82c4;
+      --gantt-locked-border: #a45d12;
       --gantt-surface: #fff;
       --gantt-tooltip-background: var(--gantt-surface);
       --gantt-tooltip-border: var(--gantt-control-border);
@@ -185,6 +186,7 @@ export class GanttChart extends LitElement {
       --gantt-task: #3ec58e;
       --gantt-milestone: #fb7185;
       --gantt-dependency: #b987ff;
+      --gantt-locked-border: #f2b261;
       --gantt-surface: #121c2b;
       --gantt-control-background: #1b283a;
       --gantt-control-hover: #26364c;
@@ -419,13 +421,18 @@ export class GanttChart extends LitElement {
     .task-cells { height: 100%; align-items: center; }
     .task-cell { display: flex; align-items: center; height: 100%; padding: 0 5px; color: inherit; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
     .task-cell.name { position: relative; }
+    .task-row.read-only .task-cell.name { box-shadow: inset 4px 0 0 var(--gantt-locked-border); }
     .task-cell.number { justify-content: flex-end; text-align: right; }
     .task-cell.parent { font-weight: 700; }
     .task-cell.tone-positive { color: var(--gantt-green); font-weight: 700; }
     .task-cell.tone-negative { color: var(--gantt-red); font-weight: 700; }
     .task-row .toggle { position: absolute; left: 2px; top: 0; z-index: 2; display: flex; align-items: center; justify-content: center; width: 19px; height: 100%; padding: 0; border: 0; background: transparent; color: var(--gantt-muted); font-size: 11px; }
     .task-row .toggle:disabled { cursor: default; }
-    .task-cell.name .task-name { display: block; flex: 1 1 auto; min-width: 0; overflow: hidden; padding-right: 24px; padding-left: 19px; text-overflow: ellipsis; white-space: nowrap; }
+    .task-cell.name .task-name { display: flex; flex: 1 1 auto; align-items: center; gap: 5px; min-width: 0; overflow: hidden; padding-right: 24px; padding-left: 19px; text-overflow: ellipsis; white-space: nowrap; }
+    .task-name-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .task-lock { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 13px; height: 13px; color: var(--gantt-locked-border); }
+    .task-lock[hidden] { display: none; }
+    .task-lock svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
     .task-focus { position: absolute; top: 50%; right: 3px; display: flex; align-items: center; justify-content: center; width: 21px; height: 21px; padding: 0; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--gantt-muted); transform: translateY(-50%); }
     .task-focus:hover, .task-focus:focus-visible { border-color: var(--gantt-control-border); background: var(--gantt-control-hover); color: var(--gantt-blue); outline: 0; }
     .task-focus svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.7; }
@@ -437,6 +444,10 @@ export class GanttChart extends LitElement {
     .task-bar { position: absolute; top: 50%; z-index: 4; height: var(--task-bar-height); border-radius: var(--gantt-bar-radius, 5px); background: var(--bar-color); box-shadow: inset 0 -2px rgb(0 0 0 / 10%); color: #fff; cursor: grab; font-size: 11px; line-height: var(--task-bar-height); overflow: hidden; padding: 0 7px; text-overflow: ellipsis; transform: translateY(-50%); white-space: nowrap; }
     .task-bar:active { cursor: grabbing; }
     .task-bar.read-only, .task-work.read-only, .summary-bar.read-only { cursor: default; }
+    .task-bar.read-only { box-sizing: border-box; border: 3px solid var(--gantt-locked-border); }
+    .task-work.read-only .task-span { z-index: 4; border: 3px solid var(--gantt-locked-border); background: transparent; pointer-events: none; }
+    .summary-bar.read-only { border-top: 3px double var(--gantt-locked-border); }
+    .summary-bar.read-only .summary-label { border-bottom: 1px solid var(--gantt-locked-border); }
     .task-bar.selected { outline: 2px solid #1d65c1; outline-offset: 1px; }
     .task-bar.milestone { width: var(--task-milestone-size) !important; height: var(--task-milestone-size); top: 50%; transform: translateY(-50%) rotate(45deg); border-radius: 2px; padding: 0; }
     .milestone-template { position: absolute; top: 50%; z-index: 4; max-width: min(240px, calc(100% - 24px)); overflow: hidden; color: var(--milestone-color); font-size: 11px; font-weight: 700; line-height: 18px; pointer-events: none; transform: translateY(-50%); text-overflow: ellipsis; white-space: nowrap; }
@@ -453,7 +464,11 @@ export class GanttChart extends LitElement {
     .summary-cap.end { right: 0; }
     .summary-label { position: absolute; top: 3px; left: 4px; display: block; max-width: calc(100% - 8px); overflow: hidden; background: var(--gantt-surface); color: inherit; font-size: 10px; font-weight: 700; line-height: 12px; padding: 0 2px; text-overflow: ellipsis; white-space: nowrap; }
     .progress-fill { position: absolute; inset: 0 auto 0 0; width: var(--progress); background: rgb(0 0 0 / 20%); pointer-events: none; }
-    .bar-label { position: relative; z-index: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bar-label { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bar-label-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .task-bar-lock { position: absolute; top: 50%; left: 6px; z-index: 6; width: 12px; height: 12px; color: #fff; pointer-events: none; transform: translateY(-50%); }
+    .task-bar.read-only:not(.milestone) { padding-left: 24px; }
+    .task-work.read-only .task-work-label { left: 24px; }
     .task-bar-template, .summary-template { position: relative; z-index: 1; display: inline; min-width: 0; overflow: hidden; white-space: nowrap; }
     .task-bar-template::before, .summary-template::before { content: ' · '; opacity: .78; }
     .resize-handle { position: absolute; top: 0; bottom: 0; z-index: 8; width: 10px; cursor: ew-resize; }
@@ -1295,6 +1310,7 @@ export class GanttChart extends LitElement {
     const isName = column.key === 'name';
     const isNumber = this.isNumericColumn(column) || ['unitCost', 'quantity', 'quantityPerDay', 'duration', 'costTotal', 'actualCost', 'plannedCost'].includes(column.key);
     const isPhase = task.type === 'parent';
+    const editable = this.isTaskEditable(task);
     const tone = column.tone?.(value, task);
     const formattedValue = this.formatColumnValue(value, column, task);
     const context = { task, value, formattedValue };
@@ -1307,7 +1323,10 @@ export class GanttChart extends LitElement {
           <button class="toggle" style="left:${2 + depth * 16}px" ?disabled=${!hasChildren} @click=${(event: Event) => { event.stopPropagation(); this.toggleTask(task.id); }} aria-label=${this.t('toggleTask')} aria-expanded=${ifDefined(hasChildren ? (task.collapsed ? 'false' : 'true') : undefined)}>
             ${hasChildren ? task.collapsed ? '▶' : '▼' : '·'}
           </button>
-          <span class="task-name" style="padding-left:${19 + depth * 16}px">${value}</span>
+          <span class="task-name" style="padding-left:${19 + depth * 16}px">
+            ${editable ? nothing : html`<span class="task-lock" role="img" aria-label=${this.tFormat('lockedTask', { name: task.name })}><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.25"></rect><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"></path></svg></span>`}
+            <span class="task-name-label">${value}</span>
+          </span>
           <button class="task-focus" aria-label=${this.t('focusTask')} title=${this.t('focusTask')} @click=${(event: Event) => { event.stopPropagation(); this.focusTaskFromGrid(task.id); }} @dblclick=${(event: Event) => event.stopPropagation()}>
             <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4.5"></circle><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3"></path></svg>
           </button>
@@ -1737,7 +1756,7 @@ export class GanttChart extends LitElement {
       const template = this.getTaskBarTemplateContent(task, color, width, 'summary');
       return html`
         <div class="summary-bar ${editable ? '' : 'read-only'} ${selected ? 'selected' : ''}" data-task-id=${task.id} style="left:${left}px; width:${Math.max(24, width)}px; --summary-color:${color};"
-             aria-label=${task.name}
+             aria-label=${editable ? task.name : this.tFormat('lockedTask', { name: task.name })}
              @click=${(event: Event) => { event.stopPropagation(); this.selectTask(task.id); }}
              @dblclick=${(event: MouseEvent) => this.openTaskEditorFromBar(task, event)}
              @pointerenter=${(event: PointerEvent) => this.openTaskTooltip(event, task, color, 'summary')}
@@ -1753,7 +1772,7 @@ export class GanttChart extends LitElement {
       let remainingProgressWidth = segments.reduce((total, segment) => total + segment.width, 0) * Math.min(100, Math.max(0, task.progress)) / 100;
       return html`
         <div class="task-work ${editable ? '' : 'read-only'} ${selected ? 'selected' : ''}" data-task-id=${task.id} style="left:${left}px; width:${width}px; --bar-color:${color};"
-             aria-label=${task.name}
+             aria-label=${editable ? task.name : this.tFormat('lockedTask', { name: task.name })}
              @click=${(event: Event) => { event.stopPropagation(); this.selectTask(task.id); }}
              @dblclick=${(event: MouseEvent) => this.openTaskEditorFromBar(task, event)}
              @pointerenter=${(event: PointerEvent) => this.openTaskTooltip(event, task, color, 'task')}
@@ -1761,6 +1780,7 @@ export class GanttChart extends LitElement {
              @pointerleave=${this.closeTaskTooltip}
              @pointerdown=${(event: PointerEvent) => this.startBarDrag(event, task, 'move')}>
           <div class="task-span"></div>
+          <span class="task-lock task-bar-lock" ?hidden=${editable} aria-hidden="true"><svg viewBox="0 0 16 16"><rect x="3.5" y="7" width="9" height="6.5" rx="1.25"></rect><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"></path></svg></span>
           ${segments.map(segment => {
             const progressWidth = Math.min(segment.width, Math.max(0, remainingProgressWidth));
             remainingProgressWidth -= progressWidth;
@@ -1775,7 +1795,7 @@ export class GanttChart extends LitElement {
     return html`
       <div class="task-bar ${editable ? '' : 'read-only'} ${milestone ? 'milestone' : ''} ${selected ? 'selected' : ''}" data-task-id=${task.id}
            style="left:${left}px; width:${milestone ? 17 : width}px; --bar-color:${color}; --progress:${task.progress}%"
-           aria-label=${task.name}
+           aria-label=${editable ? task.name : this.tFormat('lockedTask', { name: task.name })}
            @click=${(event: Event) => { event.stopPropagation(); this.selectTask(task.id); }}
            @dblclick=${(event: MouseEvent) => this.openTaskEditorFromBar(task, event)}
            @pointerenter=${(event: PointerEvent) => this.openTaskTooltip(event, task, color, 'task')}
@@ -1784,6 +1804,7 @@ export class GanttChart extends LitElement {
            @pointerdown=${(event: PointerEvent) => this.startBarDrag(event, task, 'move')}>
         ${milestone ? nothing : html`
           <div class="progress-fill"></div>
+          <span class="task-lock task-bar-lock" ?hidden=${editable} aria-hidden="true"><svg viewBox="0 0 16 16"><rect x="3.5" y="7" width="9" height="6.5" rx="1.25"></rect><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"></path></svg></span>
           ${this.renderTaskBarContent(task, color, width)}
           ${editable ? html`<span class="resize-handle start" @pointerdown=${(event: PointerEvent) => this.startBarDrag(event, task, 'resize-start')}></span><span class="resize-handle end" @pointerdown=${(event: PointerEvent) => this.startBarDrag(event, task, 'resize-end')}></span>` : nothing}
         `}
@@ -1794,7 +1815,7 @@ export class GanttChart extends LitElement {
 
   private renderTaskBarContent(task: GanttTask, color: string, width: number) {
     const content = this.getTaskBarTemplateContent(task, color, width, 'task');
-    return html`<span class="bar-label">${task.name}</span>${content !== undefined ? html`<span class="task-bar-template">${content}</span>` : nothing}`;
+    return html`<span class="bar-label"><span class="bar-label-text">${task.name}</span></span>${content !== undefined ? html`<span class="task-bar-template">${content}</span>` : nothing}`;
   }
 
   private getTaskBarTemplateContent(task: GanttTask, color: string, width: number, kind: GanttTaskBarKind): unknown {

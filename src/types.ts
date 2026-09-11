@@ -463,6 +463,7 @@ export interface GanttTranslations {
   resizeTaskGrid: string;
   resizeResourceGrid: string;
   toggleTask: string;
+  lockedTask: string;
   focusTask: string;
   nonWorkingDay: string;
   resourceCalendarFor: string;

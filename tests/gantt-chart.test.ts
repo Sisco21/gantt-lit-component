@@ -98,6 +98,8 @@ describe('GanttChart task-bar editing', () => {
 
     const bar = gantt.shadowRoot?.querySelector<HTMLElement>('.task-bar[data-task-id="child"]');
     expect(bar?.classList.contains('read-only')).toBe(true);
+    expect(gantt.shadowRoot?.querySelector('.task-row[data-task-id="child"] .task-lock')).not.toBeNull();
+    expect(gantt.shadowRoot?.querySelector('.task-bar[data-task-id="child"] .task-lock')).not.toBeNull();
     bar?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     await gantt.updateComplete;
     expect(gantt.shadowRoot?.querySelector('.task-editor-dialog')).toBeNull();
@@ -106,14 +108,18 @@ describe('GanttChart task-bar editing', () => {
     expect(gantt.getData().tasks.find(task => task.id === 'child')?.progress).toBe(0);
   });
 
-  it('locks and unlocks a task through the public API', () => {
+  it('locks and unlocks a task through the public API', async () => {
     expect(gantt.lockTask('child')).toBe(true);
+    await gantt.updateComplete;
     expect(gantt.getData().tasks.find(task => task.id === 'child')?.editable).toBe(false);
+    expect(gantt.shadowRoot?.querySelector<HTMLElement>('.task-bar[data-task-id="child"] .task-lock')?.hidden).toBe(false);
 
     gantt.updateTask('child', { progress: 75 });
     expect(gantt.getData().tasks.find(task => task.id === 'child')?.progress).toBe(0);
 
     expect(gantt.unlockTask('child')).toBe(true);
+    await gantt.updateComplete;
+    expect(gantt.shadowRoot?.querySelector<HTMLElement>('.task-bar[data-task-id="child"] .task-lock')?.hidden).toBe(true);
     gantt.updateTask('child', { progress: 75 });
     expect(gantt.getData().tasks.find(task => task.id === 'child')?.progress).toBe(75);
     expect(gantt.lockTask('unknown')).toBe(false);
