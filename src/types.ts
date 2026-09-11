@@ -650,6 +650,8 @@ export interface GanttOptions {
   taskBarTemplate?: GanttTaskBarTemplate;
   /** Extra content appended after the name inside a regular task bar. Takes precedence over `taskBarTemplate`. */
   taskTemplate?: GanttTaskBarTemplate;
+  /** Keeps a task name visible within its bar while horizontally scrolling. Defaults to true. */
+  stickyTaskLabels?: boolean;
   /** Extra content appended after the name inside a phase summary bar. Takes precedence over `taskBarTemplate` and `summaryTemplate`. */
   phaseTemplate?: GanttTaskBarTemplate;
   /** Content displayed beside a milestone diamond. */

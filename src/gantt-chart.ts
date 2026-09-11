@@ -50,6 +50,7 @@ import {
 import { getBuiltInTranslations } from './translations';
 import {
   calculateResourceDateWindow,
+  calculateStickyTaskLabelLayout,
   calculateTaskGridSizing,
   clampGanttPanelHeight,
 } from './gantt-layout';
@@ -743,7 +744,10 @@ export class GanttChart extends LitElement {
   firstUpdated(): void {
     const viewport = this.renderRoot.querySelector<HTMLElement>('.gantt-viewport');
     if (viewport) {
-      this.ganttViewportResizeObserver = new ResizeObserver(() => this.updateGanttViewport());
+      this.ganttViewportResizeObserver = new ResizeObserver(() => {
+        this.updateGanttViewport();
+        this.updateStickyTaskLabels();
+      });
       this.ganttViewportResizeObserver.observe(viewport);
     }
     const resourceTimeline = this.renderRoot.querySelector<HTMLElement>('.resource-timeline');
@@ -764,6 +768,7 @@ export class GanttChart extends LitElement {
       }
     }
     if (changed.has('taskColors')) this.applyColors();
+    this.updateStickyTaskLabels();
     if (this.taskContextMenu && this.taskContextSubmenuOpen) {
       this.renderRoot.querySelector<HTMLElement>('.gantt-context-submenu')?.classList.add('open');
     }
@@ -2369,7 +2374,46 @@ export class GanttChart extends LitElement {
     this.setScrollLeft(resourceHeader, scrollLeft);
     this.setScrollLeft(ganttScrollbar, scrollLeft);
     this.setScrollLeft(resourceScrollbar, scrollLeft);
+    this.updateStickyTaskLabels(scrollLeft, timeline?.clientWidth);
     if (resourceTimeline) this.updateResourceTimelineViewport(resourceTimeline.scrollLeft, resourceTimeline.clientWidth);
+  }
+
+  /** Moves rendered task names into the visible part of their bar without triggering a Lit render. */
+  private updateStickyTaskLabels(scrollLeft?: number, viewportWidth?: number): void {
+    const timeline = this.renderRoot.querySelector<HTMLElement>('.timeline-scroll');
+    if (!timeline) return;
+    const labels = this.renderRoot.querySelectorAll<HTMLElement>('.task-bar .bar-label, .task-work .task-work-label');
+    if (this.options.stickyTaskLabels === false) {
+      labels.forEach(label => {
+        label.hidden = false;
+        label.style.transform = '';
+        label.style.maxWidth = '';
+        label.style.width = '';
+        label.style.right = '';
+      });
+      return;
+    }
+
+    const visibleLeft = scrollLeft ?? timeline.scrollLeft;
+    const visibleWidth = viewportWidth ?? timeline.clientWidth;
+    labels.forEach(label => {
+      const bar = label.closest<HTMLElement>('.task-bar, .task-work');
+      if (!bar) return;
+      const layout = calculateStickyTaskLabelLayout(
+        bar.offsetLeft,
+        bar.offsetWidth,
+        label.offsetLeft,
+        visibleLeft,
+        visibleWidth,
+      );
+      label.hidden = layout.hidden;
+      label.style.transform = layout.translateX ? `translateX(${layout.translateX}px)` : '';
+      label.style.maxWidth = `${layout.maxWidth}px`;
+      if (label.classList.contains('task-work-label')) {
+        label.style.width = `${layout.maxWidth}px`;
+        label.style.right = 'auto';
+      }
+    });
   }
 
   /** Fenêtre horizontale rendue dans la grille Ressources (avec marge de sécurité). */

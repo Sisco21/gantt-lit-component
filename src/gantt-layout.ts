@@ -18,6 +18,13 @@ export interface ResourceDateWindow {
   end: number;
 }
 
+/** Position and available width for a task label kept inside the visible part of its bar. */
+export interface StickyTaskLabelLayout {
+  translateX: number;
+  maxWidth: number;
+  hidden: boolean;
+}
+
 export const MIN_GANTT_PANEL_HEIGHT = 140;
 export const MIN_RESOURCES_PANEL_HEIGHT = 132;
 export const PANEL_SPLITTER_HEIGHT = 8;
@@ -51,6 +58,31 @@ export function calculateResourceDateWindow(totalDays: number, dayWidth: number,
   const start = Math.max(0, firstVisible - bufferDays);
   const end = Math.min(totalDays, Math.ceil((viewport.scrollLeft + viewportWidth) / safeDayWidth) + bufferDays);
   return { start, end: Math.max(start + 1, end) };
+}
+
+/**
+ * Keeps a label in the currently visible part of a task bar, without allowing it
+ * to overlap either resize handle. All values are in timeline-content pixels.
+ */
+export function calculateStickyTaskLabelLayout(
+  barLeft: number,
+  barWidth: number,
+  labelLeft: number,
+  scrollLeft: number,
+  viewportWidth: number,
+  leftInset = 14,
+  rightInset = 14,
+): StickyTaskLabelLayout {
+  const barEnd = barLeft + Math.max(0, barWidth);
+  const labelStart = barLeft + Math.max(0, labelLeft);
+  const visibleEnd = Math.min(barEnd, scrollLeft + Math.max(0, viewportWidth));
+  const desiredStart = Math.max(labelStart, scrollLeft + leftInset);
+  const maxWidth = Math.max(0, visibleEnd - desiredStart - rightInset);
+  return {
+    translateX: Math.max(0, desiredStart - labelStart),
+    maxWidth,
+    hidden: maxWidth < 1,
+  };
 }
 
 /** Caps the draggable Gantt panel height so the resource panel always remains visible. */

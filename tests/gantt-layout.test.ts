@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateMaximumGanttPanelHeight, calculateResourceDateWindow, calculateTaskGridSizing, clampGanttPanelHeight } from '../src/gantt-layout';
+import { calculateMaximumGanttPanelHeight, calculateResourceDateWindow, calculateStickyTaskLabelLayout, calculateTaskGridSizing, clampGanttPanelHeight } from '../src/gantt-layout';
 
 describe('Gantt layout helpers', () => {
   it('keeps a minimum timeline width when resolving the task-grid splitter', () => {
@@ -13,5 +13,18 @@ describe('Gantt layout helpers', () => {
   it('preserves a resource panel while resizing the Gantt panel', () => {
     expect(calculateMaximumGanttPanelHeight(360)).toBe(220);
     expect(clampGanttPanelHeight(900, 360)).toBe(220);
+  });
+
+  it('moves a bar label into the viewport and leaves room for resize handles', () => {
+    expect(calculateStickyTaskLabelLayout(100, 400, 7, 220, 200)).toEqual({
+      translateX: 127,
+      maxWidth: 172,
+      hidden: false,
+    });
+    expect(calculateStickyTaskLabelLayout(100, 400, 7, 520, 200)).toEqual({
+      translateX: 427,
+      maxWidth: 0,
+      hidden: true,
+    });
   });
 });

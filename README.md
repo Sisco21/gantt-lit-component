@@ -659,7 +659,7 @@ gantt.setOptions({
 gantt.updateTask('task-42', { color: '#7c3aed' });
 ```
 
-Every template receives the task, its persisted colour, the visible bar width, `durationDays`, and a `kind` (`task`, `summary`, or `milestone`). `durationDays` matches the built-in Duration column and is recalculated whenever a task is moved or resized.
+Every template receives the task, its persisted colour, the visible bar width, `durationDays`, and a `kind` (`task`, `summary`, or `milestone`). `durationDays` matches the built-in Duration column and is recalculated whenever a task is moved or resized. By default, the built-in task name moves into the visible portion of a long bar while the timeline scrolls, while keeping clear of the resize handles. Set `stickyTaskLabels: false` to disable this behaviour.
 
 `taskBarTemplate` remains available for existing integrations; it is the fallback for regular tasks and phases. `summaryTemplate` remains the final fallback for phases.
 
