@@ -394,6 +394,8 @@ export interface GanttTranslations {
   quantity: string;
   totalQuantity: string;
   addResource: string;
+  newTask: string;
+  newResource: string;
   editTask: string;
   addTaskAfter: string;
   close: string;

@@ -1154,7 +1154,7 @@ export class GanttChart extends LitElement {
     const task: GanttTask = {
       ...newTask,
       id: taskId,
-      name: newTask.name || 'New task',
+      name: newTask.name || this.t('newTask'),
       start: newTask.start || today,
       end: newTask.end || this.addDays(today, 7),
       progress: newTask.progress ?? 0,
@@ -2978,7 +2978,7 @@ export class GanttChart extends LitElement {
     const created: GanttResource = {
       id: resource.id || this.createId(),
       resourceId: resource.resourceId,
-      name: resource.name || 'Nouvelle ressource',
+      name: resource.name || this.t('newResource'),
       type: resource.type || 'work',
       unit: resource.unit || 'U',
       unitCost: resource.unitCost ?? 0,
@@ -3253,7 +3253,7 @@ export class GanttChart extends LitElement {
     const start = this.addDays(current.end, 1);
     const created: GanttTask = {
       id: this.createId(),
-      name: 'New task',
+      name: this.t('newTask'),
       start,
       end: this.addDays(start, 6),
       progress: 0,

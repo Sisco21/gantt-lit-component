@@ -867,6 +867,8 @@ gantt.options = {
   nonWorkingDays: [0, 6],     // days to shade; [] disables non-working-day shading
   translations: {
     resources: 'People and equipment',
+    newTask: 'New work item',
+    newResource: 'New catalogue resource',
     noPlanningData: 'Nothing has been planned yet.',
     focusTask: 'Centre task in timeline',
     resizeTaskGrid: 'Resize task grid',
@@ -876,6 +878,8 @@ gantt.options = {
 ```
 
 Translation values with placeholders support `{file}`, `{extension}`, `{column}` and `{name}`. Keep those placeholders in the translated sentence; their order can be changed to suit the language.
+
+The demo overrides `newTask` and `newResource` in both English and French so the default names shown when creating tasks or manual resources can be replaced without modifying the component. Translation overrides are applied after locale selection and can contain only the labels that need changing.
 
 ### Configurable date headers
 

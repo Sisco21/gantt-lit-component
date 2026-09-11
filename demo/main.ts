@@ -2,7 +2,7 @@ import { html, nothing } from 'lit';
 import '../src/gantt-chart';
 import type { GanttChart } from '../src/gantt-chart';
 import { GanttColumnType } from '../src/types';
-import type { GanttColumnRenderContext, GanttColumnSettings, GanttData, GanttOptions, GanttProjectSummary, GanttResource, GanttResourceProvider, GanttResourceReference, GanttTask, GanttTaskDeleteContext, GanttTaskEditorTemplateContext } from '../src/types';
+import type { GanttColumnRenderContext, GanttColumnSettings, GanttData, GanttOptions, GanttProjectSummary, GanttResource, GanttResourceProvider, GanttResourceReference, GanttTask, GanttTaskDeleteContext, GanttTaskEditorTemplateContext, GanttTranslations } from '../src/types';
 import { formatDate } from '../src/utils';
 import sampleData from './data.json' with { type: 'json' };
 
@@ -41,6 +41,18 @@ const DEMO_UI = {
 
 type DemoTextKey = keyof typeof DEMO_UI.en;
 let demoLanguage: DemoLanguage = 'en';
+
+/** Example of host-level overrides applied after the component selects its locale. */
+const demoTranslationOverrides: Record<DemoLanguage, Partial<GanttTranslations>> = {
+  en: {
+    newTask: 'New work item',
+    newResource: 'New catalogue resource',
+  },
+  fr: {
+    newTask: 'Nouvel ouvrage',
+    newResource: 'Nouvelle ressource catalogue',
+  },
+};
 
 function demoText(key: DemoTextKey, values: Record<string, string | number> = {}): string {
   return DEMO_UI[demoLanguage][key].replace(/\{(\w+)\}/g, (_match, name: string) => String(values[name] ?? ''));
@@ -631,6 +643,8 @@ function getLocalizedDemoOptions(): GanttOptions {
   return {
     ...demoOptions,
     locale: getDemoLocale(),
+    // These values override the built-in `newTask` and `newResource` labels.
+    translations: demoTranslationOverrides[demoLanguage],
     taskColumns: localizeColumns(demoOptions.taskColumns || [], taskColumnTranslationKeys),
     resourceColumns: localizeColumns(demoOptions.resourceColumns || [], resourceColumnTranslationKeys),
   };
