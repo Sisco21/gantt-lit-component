@@ -404,14 +404,45 @@ header p {
 }
 
 .project-footer dl {
+  position: relative;
   min-width: 0;
   padding: 10px 18px;
   border-right: 1px solid var(--demo-border);
+  cursor: help;
 }
 
 .project-footer dl:last-child { border-right: 0; }
 .project-footer dt { color: var(--demo-muted); font-size: .72rem; font-weight: 600; }
 .project-footer dd { margin-top: 3px; overflow: hidden; color: var(--demo-text); font-size: .92rem; font-weight: 700; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.project-footer dl::after {
+  position: absolute;
+  z-index: 20;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  width: max-content;
+  max-width: min(290px, calc(100vw - 24px));
+  padding: 8px 10px;
+  border: 1px solid var(--demo-border);
+  border-radius: 6px;
+  background: var(--demo-surface);
+  box-shadow: 0 6px 18px rgb(0 0 0 / 22%);
+  color: var(--demo-text);
+  content: attr(data-tooltip);
+  font-size: .76rem;
+  font-weight: 400;
+  line-height: 1.35;
+  opacity: 0;
+  pointer-events: none;
+  text-align: left;
+  transform: translate(-50%, 4px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  white-space: normal;
+}
+.project-footer dl:hover::after,
+.project-footer dl:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
 .cost-variance--favorable { color: var(--gantt-footer-variance-favorable); }
 .cost-variance--unfavorable { color: var(--gantt-footer-variance-unfavorable); }
 .cost-variance--neutral { color: var(--gantt-footer-variance-neutral); }

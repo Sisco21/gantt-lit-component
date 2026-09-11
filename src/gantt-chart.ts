@@ -295,6 +295,7 @@ export class GanttChart extends LitElement {
       grid-template-rows: var(--timeline-header-height, ${HEADER_HEIGHT}px) auto;
       width: 100%;
       min-width: 0;
+      min-height: 100%;
       box-sizing: border-box;
       padding-bottom: 18px;
       align-items: start;
@@ -480,7 +481,11 @@ export class GanttChart extends LitElement {
     .dependency-arrow { width: 0; height: 0; border-top: 6px solid transparent; border-bottom: 6px solid transparent; transform: translateY(-5px); }
     .dependency-arrow.right { border-left: 8px solid var(--dependency-color, #3b82c4); }
     .column-resizer { position: absolute; top: 0; bottom: 0; left: calc(var(--header-width) - 3px); z-index: 35; width: 6px; cursor: col-resize; touch-action: none; }
-    .column-resizer:hover, .column-resizer:focus-visible { background: rgb(52 120 212 / 18%); outline: 0; }
+    .column-resizer::before, .resource-grid-splitter::before { position: absolute; top: 0; bottom: 0; left: 2px; width: 2px; content: ''; background: var(--gantt-control-border); opacity: .72; }
+    .column-resizer::after, .resource-grid-splitter::after { position: absolute; top: 50%; left: 1px; width: 4px; height: 46px; border-radius: 2px; background: var(--gantt-control-border); box-shadow: 0 0 0 1px var(--gantt-surface); content: ''; opacity: .88; transform: translateY(-50%); }
+    .column-resizer:hover, .column-resizer:focus-visible, .resource-grid-splitter:hover, .resource-grid-splitter:focus-visible { background: rgb(52 120 212 / 18%); outline: 0; }
+    .column-resizer:hover::before, .column-resizer:focus-visible::before, .resource-grid-splitter:hover::before, .resource-grid-splitter:focus-visible::before { background: var(--gantt-blue); opacity: 1; }
+    .column-resizer:hover::after, .column-resizer:focus-visible::after, .resource-grid-splitter:hover::after, .resource-grid-splitter:focus-visible::after { background: var(--gantt-blue); opacity: 1; }
     .empty { position: relative; z-index: 6; min-height: 100%; padding: 40px; background: var(--gantt-empty-background); color: var(--gantt-empty-color); text-align: center; }
 
     .resources-panel { display: grid; grid-template-columns: var(--header-width) minmax(var(--min-timeline-width, 160px), 1fr); grid-template-rows: auto minmax(0, 1fr) 18px; width: 100%; min-width: 0; height: 100%; border-top: 2px solid var(--gantt-border); background: var(--gantt-surface); }
@@ -526,7 +531,7 @@ export class GanttChart extends LitElement {
     .link-add { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 8px; }
     .editor-empty { padding: 14px; color: var(--gantt-muted); font-size: 12px; text-align: center; }
     .resources-scroll { grid-column: 1 / -1; grid-row: 2; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; position: relative; }
-    .resources-body { display: grid; grid-template-columns: var(--header-width) minmax(var(--min-timeline-width, 160px), 1fr); grid-template-rows: var(--resource-header-height, 32px) minmax(0, 1fr); width: 100%; min-width: 0; min-height: 100%; }
+    .resources-body { position: relative; display: grid; grid-template-columns: var(--header-width) minmax(var(--min-timeline-width, 160px), 1fr); grid-template-rows: var(--resource-header-height, 32px) minmax(0, 1fr); width: 100%; min-width: 0; min-height: 100%; }
     .resource-left-header { grid-column: 1; grid-row: 1; position: sticky; top: 0; z-index: 4; overflow: hidden; border-right: 1px solid var(--gantt-border); background: var(--gantt-header); }
     .resources-left { grid-column: 1; grid-row: 2; min-width: 0; min-height: 0; overflow-x: auto; overflow-y: clip; border-right: 1px solid var(--gantt-border); scrollbar-width: none; }
     .resources-grid { display: grid; grid-template-columns: var(--resource-columns-template); min-width: var(--resource-columns-width); }
@@ -559,6 +564,7 @@ export class GanttChart extends LitElement {
     .resource-column-header .column-drag-handle { height: 21px; }
     .resource-column-resizer { position: absolute; top: 0; right: -3px; z-index: 3; width: 6px; height: 100%; cursor: col-resize; touch-action: none; }
     .resource-column-resizer:hover, .resource-column-resizer:focus-visible { background: rgb(52 120 212 / 22%); outline: 0; }
+    .resource-grid-splitter { position: absolute; top: 0; bottom: 0; left: calc(var(--header-width) - 3px); z-index: 35; width: 6px; cursor: col-resize; touch-action: none; }
     .resource-cell.resource-action { display: flex; align-items: center; justify-content: center; padding-inline: 4px; }
     .resources-scrollbar-dock { grid-column: 1 / -1; grid-row: 3; display: grid; grid-template-columns: var(--header-width) minmax(var(--min-timeline-width, 160px), 1fr); min-width: 0; height: 18px; border-top: 1px solid var(--gantt-border); background: var(--gantt-header); }
     .resource-horizontal-scroll { min-width: 0; overflow-x: auto; overflow-y: hidden; }
@@ -683,8 +689,11 @@ export class GanttChart extends LitElement {
     currentEnd: string;
     baseTasks: GanttTask[];
     changed: boolean;
+    initialScrollLeft: number;
+    pointerX?: number;
     pendingX?: number;
     frame?: number;
+    autoScrollFrame?: number;
   };
   private ganttPan?: {
     pointerId: number;
@@ -1323,6 +1332,7 @@ export class GanttChart extends LitElement {
           })}</div></div>`)}
               </div>
             </div>
+            ${this.options.taskGridSplitter?.enabled !== false ? html`<div class="resource-grid-splitter" role="separator" tabindex="0" aria-label=${this.t('resizeTaskGrid')} @pointerdown=${this.startColumnResize}></div>` : nothing}
           </div>
         </div>
         <div class="resources-scrollbar-dock" aria-label="${this.t('resources')}">
@@ -2410,14 +2420,17 @@ export class GanttChart extends LitElement {
     event.preventDefault();
     event.stopPropagation();
     this.selectTask(task.id);
-    this.barDrag = { taskId: task.id, mode, startX: event.clientX, originalStart: task.start, originalEnd: task.end, currentStart: task.start, currentEnd: task.end, baseTasks: this.getFlatTasks(), changed: false };
+    const timeline = this.renderRoot.querySelector<HTMLElement>('.timeline-scroll');
+    this.barDrag = { taskId: task.id, mode, startX: event.clientX, originalStart: task.start, originalEnd: task.end, currentStart: task.start, currentEnd: task.end, baseTasks: this.getFlatTasks(), changed: false, initialScrollLeft: timeline?.scrollLeft || 0, pointerX: event.clientX };
     document.addEventListener('pointermove', this.handleBarDragMove);
     document.addEventListener('pointerup', this.finishBarDrag, { once: true });
+    this.barDrag.autoScrollFrame = window.requestAnimationFrame(this.handleBarDragAutoScroll);
   }
 
   private handleBarDragMove = (event: PointerEvent): void => {
     const drag = this.barDrag;
     if (!drag) return;
+    drag.pointerX = event.clientX;
     drag.pendingX = event.clientX;
     if (drag.frame !== undefined) return;
     drag.frame = window.requestAnimationFrame(() => {
@@ -2428,11 +2441,42 @@ export class GanttChart extends LitElement {
     });
   };
 
+  /** Scrolls the timeline while a bar is held near either horizontal edge. */
+  private handleBarDragAutoScroll = (): void => {
+    const drag = this.barDrag;
+    if (!drag) return;
+    const timeline = this.renderRoot.querySelector<HTMLElement>('.timeline-scroll');
+    if (timeline && drag.pointerX !== undefined) {
+      const bounds = timeline.getBoundingClientRect();
+      const edgeSize = Math.min(84, Math.max(36, bounds.width * .16));
+      let direction = 0;
+      let intensity = 0;
+      if (drag.pointerX < bounds.left + edgeSize) {
+        direction = -1;
+        intensity = 1 - Math.max(0, drag.pointerX - bounds.left) / edgeSize;
+      } else if (drag.pointerX > bounds.right - edgeSize) {
+        direction = 1;
+        intensity = 1 - Math.max(0, bounds.right - drag.pointerX) / edgeSize;
+      }
+      if (direction) {
+        const maximum = Math.max(0, timeline.scrollWidth - timeline.clientWidth);
+        const nextScrollLeft = Math.max(0, Math.min(maximum, timeline.scrollLeft + direction * Math.max(2, Math.ceil(intensity * 18))));
+        if (nextScrollLeft !== timeline.scrollLeft) {
+          timeline.scrollLeft = nextScrollLeft;
+          this.applyBarDragPosition(drag.pointerX);
+        }
+      }
+    }
+    if (this.barDrag) this.barDrag.autoScrollFrame = window.requestAnimationFrame(this.handleBarDragAutoScroll);
+  };
+
   /** Limite les rendus pendant un glisser-déposer à une mise à jour par image. */
   private applyBarDragPosition(clientX: number): void {
     const drag = this.barDrag;
     if (!drag) return;
-    const delta = Math.round((clientX - drag.startX) / this.getDayWidth());
+    const timeline = this.renderRoot.querySelector<HTMLElement>('.timeline-scroll');
+    const scrollDelta = (timeline?.scrollLeft || 0) - drag.initialScrollLeft;
+    const delta = Math.round((clientX - drag.startX + scrollDelta) / this.getDayWidth());
     let start = drag.originalStart;
     let end = drag.originalEnd;
     if (drag.mode === 'move') { start = this.addDays(start, delta); end = this.addDays(end, delta); }
@@ -2449,6 +2493,7 @@ export class GanttChart extends LitElement {
     document.removeEventListener('pointermove', this.handleBarDragMove);
     const drag = this.barDrag;
     if (!drag) return;
+    if (drag.autoScrollFrame !== undefined) window.cancelAnimationFrame(drag.autoScrollFrame);
     if (drag.frame !== undefined) {
       window.cancelAnimationFrame(drag.frame);
       drag.frame = undefined;

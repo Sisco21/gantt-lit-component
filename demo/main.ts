@@ -17,6 +17,7 @@ const DEMO_UI = {
     locale: 'en-US', language: 'Language', ganttTitle: 'Gantt Chart Component', ganttSubtitle: 'Reusable Lit Component with parent tasks, drag & drop, and custom colors', importJson: '📥 Import JSON', importProject: '📥 Import MS Project', loadSample: '📋 Load sample', largeSample: 'Large sample · 1,550 tasks', reset: '🔄 Reset',
     style: 'Style', demoVisualStyle: 'Demo visual style', darkOperations: 'Dark operations', switchToDark: 'Switch to dark theme', switchToLight: 'Switch to light theme', weekStarts: 'Week starts', monday: 'Monday', sunday: 'Sunday', weekNumbering: 'Week numbering', firstFullWeek: 'First full week', taskRowHeight: 'Task row height',
     start: 'Start', finish: 'Finish', duration: 'Duration', progress: 'Progress', workItems: 'Work items', schedule: 'Schedule', costs: 'Costs', resources: 'Resources', planningSummary: 'Planning summary',
+    startTooltip: 'Earliest start date of the project.', finishTooltip: 'Latest finish date of the project.', durationTooltip: 'Total calendar duration and number of working days.', progressTooltip: 'Overall duration-weighted progress of the project.', workItemsTooltip: 'Number of tasks, phases and milestones.', scheduleTooltip: 'Incomplete tasks past the reference date and the next due date.', costsTooltip: 'Planned total cost, actual cost and the difference between them.', resourcesTooltip: 'Number of resources, assigned load and declared capacity.',
     loadingSchedule: 'Loading schedule', preparingSample: 'Preparing sample data…', loadingInProgress: 'Loading in progress',
     calendarDays: 'calendar days', workingDays: 'working days', tasks: 'Tasks', phases: 'Phases', milestones: 'Milestones', overdue: 'overdue', next: 'Next', total: 'Total', actual: 'Actual', load: 'Load', capacity: 'Capacity',
     weekUpdated: 'Week: {weekStart} — {weekNumbering}', jsonLoaded: 'JSON file loaded: {name}', projectLoaded: 'Project loaded: {name}', invalidJson: 'Invalid JSON file', invalidProject: 'Invalid project file', sampleLoaded: 'Sample data loaded', generatingLarge: 'Generating {count} tasks and their dependencies…', largeLoaded: 'Large sample loaded: {count} tasks in {elapsed} ms', ganttReset: 'Gantt reset', componentReady: 'Gantt component ready', styleApplied: '{style} style applied', deleteConfirm: 'Delete “{name}”?', deleteChildren: 'This will also delete {count} child task{suffix}.',
@@ -27,6 +28,7 @@ const DEMO_UI = {
     locale: 'fr-FR', language: 'Langue', ganttTitle: 'Composant de diagramme de Gantt', ganttSubtitle: 'Composant Lit réutilisable avec tâches parentes, glisser-déposer et couleurs personnalisées', importJson: '📥 Importer JSON', importProject: '📥 Importer MS Project', loadSample: '📋 Charger exemple', largeSample: 'Grand exemple · 1 550 tâches', reset: '🔄 Réinitialiser',
     style: 'Style', demoVisualStyle: 'Style visuel de la démo', darkOperations: 'Opérations sombres', switchToDark: 'Passer au thème sombre', switchToLight: 'Passer au thème clair', weekStarts: 'Début de semaine', monday: 'Lundi', sunday: 'Dimanche', weekNumbering: 'Numérotation des semaines', firstFullWeek: 'Première semaine complète', taskRowHeight: 'Hauteur des lignes',
     start: 'Début', finish: 'Fin', duration: 'Durée', progress: 'Avancement', workItems: 'Éléments', schedule: 'Planning', costs: 'Coûts', resources: 'Ressources', planningSummary: 'Récapitulatif du planning',
+    startTooltip: 'Date de début la plus ancienne du projet.', finishTooltip: 'Date de fin la plus tardive du projet.', durationTooltip: 'Durée totale en jours calendaires et nombre de jours travaillés.', progressTooltip: 'Avancement global du projet, pondéré par la durée.', workItemsTooltip: 'Nombre de tâches, phases et jalons.', scheduleTooltip: 'Tâches incomplètes en retard par rapport à la date de référence et prochaine échéance.', costsTooltip: 'Coût total prévu, coût réel et différence entre les deux.', resourcesTooltip: 'Nombre de ressources, charge affectée et capacité déclarée.',
     loadingSchedule: 'Chargement du planning', preparingSample: 'Préparation des données exemple…', loadingInProgress: 'Chargement en cours',
     calendarDays: 'jours calendaires', workingDays: 'jours travaillés', tasks: 'Tâches', phases: 'Phases', milestones: 'Jalons', overdue: 'en retard', next: 'Prochaine', total: 'Total', actual: 'Réel', load: 'Charge', capacity: 'Capacité',
     weekUpdated: 'Semaine : {weekStart} — {weekNumbering}', jsonLoaded: 'Fichier JSON chargé : {name}', projectLoaded: 'Projet chargé : {name}', invalidJson: 'Fichier JSON invalide', invalidProject: 'Fichier projet invalide', sampleLoaded: 'Exemple chargé', generatingLarge: 'Génération de {count} tâches et de leurs dépendances…', largeLoaded: 'Grand exemple chargé : {count} tâches en {elapsed} ms', ganttReset: 'Gantt réinitialisé', componentReady: 'Composant Gantt prêt', styleApplied: 'Style {style} appliqué', deleteConfirm: 'Supprimer « {name} » ?', deleteChildren: 'Cette action supprimera aussi {count} tâche{suffix} enfant.',
@@ -106,10 +108,28 @@ function updateProjectFooter(summary: GanttProjectSummary, options: ProjectFoote
     'summary-schedule': `${summary.overdueTaskCount} ${demoText('overdue')} · ${demoText('next')} ${formatDate(summary.nextDueDate)}`,
     'summary-resources': `${summary.resourceCount} · ${demoText('load')} ${formatQuantity.format(summary.totalResourceQuantity)} / ${demoText('capacity')} ${formatQuantity.format(summary.totalResourceCapacity)}`,
   };
+  const tooltipKeys: Record<string, DemoTextKey> = {
+    'summary-start': 'startTooltip',
+    'summary-end': 'finishTooltip',
+    'summary-duration': 'durationTooltip',
+    'summary-progress': 'progressTooltip',
+    'summary-items': 'workItemsTooltip',
+    'summary-schedule': 'scheduleTooltip',
+    'summary-cost': 'costsTooltip',
+    'summary-resources': 'resourcesTooltip',
+  };
   Object.entries(values).forEach(([id, value]) => {
     const output = document.getElementById(id);
     if (!output) return;
     output.textContent = value;
+    const field = output.closest<HTMLElement>('dl');
+    const tooltipKey = tooltipKeys[id];
+    if (field && tooltipKey) {
+      const tooltip = demoText(tooltipKey);
+      field.dataset.tooltip = tooltip;
+      field.setAttribute('aria-label', tooltip);
+      field.tabIndex = 0;
+    }
   });
 
   const costOutput = document.getElementById('summary-cost');
@@ -119,6 +139,13 @@ function updateProjectFooter(summary: GanttProjectSummary, options: ProjectFoote
   varianceOutput.className = varianceStyle?.className ?? '';
   varianceOutput.textContent = `${varianceIcon ? `${varianceIcon} ` : ''}${formattedCostVariance}`;
   costOutput.append(varianceOutput);
+  const costField = costOutput.closest<HTMLElement>('dl');
+  if (costField) {
+    const tooltip = demoText('costsTooltip');
+    costField.dataset.tooltip = tooltip;
+    costField.setAttribute('aria-label', tooltip);
+    costField.tabIndex = 0;
+  }
 }
 
 function roundQuantity(value: number): number {
@@ -260,8 +287,8 @@ const demoOptions: GanttOptions = {
   locale: getDemoLocale(),
   dayWidth: 30, // Keeps compact custom labels such as "V 16" on one line.
   taskRowHeight: 42,
-  // The left grid stays draggable but never uses more than half the browser width.
-  taskGridSplitter: { minWidth: 260, maxWidth: '55vw', minTimelineWidth: 200 },
+  // The left grid stays draggable while reserving at least 200 px for the timeline.
+  taskGridSplitter: { minWidth: 260, maxWidth: '75vw', minTimelineWidth: 200 },
   columnSettings: {
     // These three permissions can be disabled independently by an integrating application.
     allowResize: true,
