@@ -1165,6 +1165,8 @@ export class GanttChart extends LitElement {
     const next = [...this.getFlatTasks(), task];
     this.replaceFlatTasks(next, 'task-created', task.id);
     this.selectTask(task.id);
+    if (this.options.openTaskEditorOnCreate) this.openTaskEditor(task.id);
+    if (this.options.focusTaskOnCreate) this.fitTaskToView(task.id);
     return task;
   }
 
@@ -2975,6 +2977,7 @@ export class GanttChart extends LitElement {
     const totalQuantity = resource.totalQuantity ?? resource.quantity ?? 1;
     const created: GanttResource = {
       id: resource.id || this.createId(),
+      resourceId: resource.resourceId,
       name: resource.name || 'Nouvelle ressource',
       type: resource.type || 'work',
       unit: resource.unit || 'U',
@@ -3123,7 +3126,7 @@ export class GanttChart extends LitElement {
     const start = this.ganttContextMenu?.date || formatDate(new Date());
     this.ganttContextMenu = undefined;
     const task = this.addChildTask('', { type, start, end: this.addDays(start, type === 'parent' ? 14 : 7) });
-    this.openTaskEditor(task.id);
+    if (!this.options.openTaskEditorOnCreate) this.openTaskEditor(task.id);
   }
 
   /** Resolves the date represented by an empty timeline cell for contextual creation. */
@@ -3263,6 +3266,7 @@ export class GanttChart extends LitElement {
     this.replaceFlatTasks(flatTasks, 'task-created', created.id);
     this.selectTask(created.id);
     this.openTaskEditor(created.id);
+    if (this.options.focusTaskOnCreate) this.fitTaskToView(created.id);
   }
 
   private openTaskEditor(taskId: string, tab: 'general' | 'resources' | 'links' = 'general'): void {

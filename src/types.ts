@@ -655,6 +655,10 @@ export interface GanttOptions {
   autoSchedule?: boolean;
   /** Use 'external' to let the host application open its own task editor from onTaskEdit. */
   taskEditorMode?: 'built-in' | 'external';
+  /** Opens the built-in or custom task editor after addChildTask(). Defaults to false. */
+  openTaskEditorOnCreate?: boolean;
+  /** Centres a newly created task in the Gantt timeline. Defaults to false. */
+  focusTaskOnCreate?: boolean;
   /** Replaces the body of the built-in editor with a host-provided Lit template. */
   taskEditorTemplate?: GanttTaskEditorTemplate;
   /** Replaces the built-in task right-click menu with host-provided content. */

@@ -2,7 +2,7 @@ import { html, nothing } from 'lit';
 import '../src/gantt-chart';
 import type { GanttChart } from '../src/gantt-chart';
 import { GanttColumnType } from '../src/types';
-import type { GanttColumnRenderContext, GanttColumnSettings, GanttData, GanttOptions, GanttProjectSummary, GanttResource, GanttResourceProvider, GanttResourceReference, GanttTask, GanttTaskDeleteContext } from '../src/types';
+import type { GanttColumnRenderContext, GanttColumnSettings, GanttData, GanttOptions, GanttProjectSummary, GanttResource, GanttResourceProvider, GanttResourceReference, GanttTask, GanttTaskDeleteContext, GanttTaskEditorTemplateContext } from '../src/types';
 import { formatDate } from '../src/utils';
 import sampleData from './data.json' with { type: 'json' };
 
@@ -23,6 +23,7 @@ const DEMO_UI = {
     weekUpdated: 'Week: {weekStart} — {weekNumbering}', jsonLoaded: 'JSON file loaded: {name}', projectLoaded: 'Project loaded: {name}', invalidJson: 'Invalid JSON file', invalidProject: 'Invalid project file', sampleLoaded: 'Sample data loaded', generatingLarge: 'Generating {count} tasks and their dependencies…', largeLoaded: 'Large sample loaded: {count} tasks in {elapsed} ms', ganttReset: 'Gantt reset', componentReady: 'Gantt component ready', styleApplied: '{style} style applied', deleteConfirm: 'Delete “{name}”?', deleteChildren: 'This will also delete {count} child task{suffix}.',
     addTaskOn: '＋ Add task on {date}', addPhaseOn: '＋ Add phase on {date}', fitSchedule: 'Fit schedule {date}', close: 'Close', editPhase: '✎ Edit phase', fitPhase: 'Fit phase', addPhaseTask: '＋ Add phase task', deletePhase: 'Delete phase', editTask: '✎ Edit task', setProgress0: 'Set progress to 0%', setProgress50: 'Set progress to 50%', markComplete: 'Mark as complete', fitTask: 'Fit {name}', addTaskAfter: '＋ Add task after', logTask: 'Log task', deleteTask: 'Delete task',
     daysShort: 'd', days: 'days', cost: 'Cost', actualCost: 'Actual cost', totalCost: 'Total cost', costCoefficient: 'Cost × coefficient', delta: 'Delta', taskName: 'Task name', code: 'Code', name: 'Name', type: 'Type', unit: 'Unit of work', calendar: 'Calendar', unitPrice: 'PU', quantity: 'Q', totalQuantity: 'Total quantity', coefficient: 'Coefficient', actualCostVariance: 'Actual cost variance',
+    resourcesForTask: 'Resources for this task', addSingleResource: 'Add a resource', resourceTeams: 'Resource teams / work packages', assignTeam: 'Assign team', assignedResources: 'Assigned resources', noAssignedResources: 'No resources assigned yet.', aiRecommendations: 'Suggested from the task name', aiRecommendationsHint: 'Demo rule only — replace this step with your AI service.', addAll: 'Add all', teamGroundworks: 'Groundworks team', teamGroundworksDescription: 'Surveyor, excavator and site equipment', teamConcrete: 'Concrete team', teamConcreteDescription: 'Concrete crew and pump', teamInstallation: 'Installation team', teamInstallationDescription: 'Installers and lifting equipment',
   },
   fr: {
     locale: 'fr-FR', language: 'Langue', ganttTitle: 'Composant de diagramme de Gantt', ganttSubtitle: 'Composant Lit réutilisable avec tâches parentes, glisser-déposer et couleurs personnalisées', importJson: '📥 Importer JSON', importProject: '📥 Importer MS Project', loadSample: '📋 Charger exemple', largeSample: 'Grand exemple · 1 550 tâches', reset: '🔄 Réinitialiser',
@@ -34,6 +35,7 @@ const DEMO_UI = {
     weekUpdated: 'Semaine : {weekStart} — {weekNumbering}', jsonLoaded: 'Fichier JSON chargé : {name}', projectLoaded: 'Projet chargé : {name}', invalidJson: 'Fichier JSON invalide', invalidProject: 'Fichier projet invalide', sampleLoaded: 'Exemple chargé', generatingLarge: 'Génération de {count} tâches et de leurs dépendances…', largeLoaded: 'Grand exemple chargé : {count} tâches en {elapsed} ms', ganttReset: 'Gantt réinitialisé', componentReady: 'Composant Gantt prêt', styleApplied: 'Style {style} appliqué', deleteConfirm: 'Supprimer « {name} » ?', deleteChildren: 'Cette action supprimera aussi {count} tâche{suffix} enfant.',
     addTaskOn: '＋ Ajouter une tâche le {date}', addPhaseOn: '＋ Ajouter une phase le {date}', fitSchedule: 'Ajuster le planning {date}', close: 'Fermer', editPhase: '✎ Modifier la phase', fitPhase: 'Ajuster la phase', addPhaseTask: '＋ Ajouter une tâche de phase', deletePhase: 'Supprimer la phase', editTask: '✎ Modifier la tâche', setProgress0: 'Mettre l’avancement à 0 %', setProgress50: 'Mettre l’avancement à 50 %', markComplete: 'Marquer comme terminée', fitTask: 'Ajuster {name}', addTaskAfter: '＋ Ajouter une tâche après', logTask: 'Journaliser la tâche', deleteTask: 'Supprimer la tâche',
     daysShort: 'j', days: 'jours', cost: 'Coût', actualCost: 'Coût réel', totalCost: 'Coût total', costCoefficient: 'Coût × coefficient', delta: 'Écart', taskName: 'Nom de la tâche', code: 'Code', name: 'Nom', type: 'Type', unit: 'Unité d’œuvre', calendar: 'Calendrier', unitPrice: 'PU', quantity: 'Q', totalQuantity: 'Quantité totale', coefficient: 'Coefficient', actualCostVariance: 'Écart de coût réel',
+    resourcesForTask: 'Ressources de la tâche', addSingleResource: 'Ajouter une ressource', resourceTeams: 'Équipes / ouvrages', assignTeam: 'Affecter l’équipe', assignedResources: 'Ressources affectées', noAssignedResources: 'Aucune ressource affectée.', aiRecommendations: 'Suggestion basée sur le nom de la tâche', aiRecommendationsHint: 'Règle de démonstration — remplacez cette étape par votre service IA.', addAll: 'Tout ajouter', teamGroundworks: 'Équipe terrassement', teamGroundworksDescription: 'Géomètre, pelle et matériel de chantier', teamConcrete: 'Équipe béton', teamConcreteDescription: 'Équipe béton et pompe', teamInstallation: 'Équipe installation', teamInstallationDescription: 'Installateurs et équipement de levage',
   },
 } as const;
 
@@ -53,7 +55,65 @@ const demoResourceCatalogue: GanttResourceReference[] = [
   { id: 'catalogue-worker-qualified', name: 'Qualified worker', type: 'work', unit: 'day', unitCost: 400, maxUnits: 8 },
   { id: 'catalogue-site-barrier', name: 'Site barrier', type: 'material', unit: 'unit', unitCost: 50, maxUnits: 250 },
   { id: 'catalogue-surveyor', name: 'Surveyor', type: 'work', unit: 'day', unitCost: 620, maxUnits: 2 },
+  { id: 'catalogue-excavator', name: 'Excavator', type: 'work', unit: 'day', unitCost: 780, maxUnits: 1 },
+  { id: 'catalogue-concrete-crew', name: 'Concrete crew', type: 'work', unit: 'day', unitCost: 540, maxUnits: 6 },
+  { id: 'catalogue-concrete-pump', name: 'Concrete pump', type: 'material', unit: 'day', unitCost: 680, maxUnits: 1 },
+  { id: 'catalogue-installers', name: 'Installation crew', type: 'work', unit: 'day', unitCost: 460, maxUnits: 5 },
+  { id: 'catalogue-lifting-equipment', name: 'Lifting equipment', type: 'material', unit: 'day', unitCost: 320, maxUnits: 1 },
 ];
+
+interface DemoResourceBundle {
+  id: string;
+  labelKey: DemoTextKey;
+  descriptionKey: DemoTextKey;
+  resources: GanttResourceReference[];
+}
+
+/** Reusable teams/works packages. In a real application these can come from an API. */
+const demoResourceBundles: DemoResourceBundle[] = [
+  {
+    id: 'groundworks-team',
+    labelKey: 'teamGroundworks',
+    descriptionKey: 'teamGroundworksDescription',
+    resources: [
+      { ...demoResourceCatalogue.find(resource => resource.id === 'catalogue-surveyor')!, quantity: 1 },
+      { ...demoResourceCatalogue.find(resource => resource.id === 'catalogue-excavator')!, quantity: 1 },
+    ],
+  },
+  {
+    id: 'concrete-team',
+    labelKey: 'teamConcrete',
+    descriptionKey: 'teamConcreteDescription',
+    resources: [
+      { ...demoResourceCatalogue.find(resource => resource.id === 'catalogue-concrete-crew')!, quantity: 1 },
+      { ...demoResourceCatalogue.find(resource => resource.id === 'catalogue-concrete-pump')!, quantity: 1 },
+    ],
+  },
+  {
+    id: 'installation-team',
+    labelKey: 'teamInstallation',
+    descriptionKey: 'teamInstallationDescription',
+    resources: [
+      { ...demoResourceCatalogue.find(resource => resource.id === 'catalogue-installers')!, quantity: 1 },
+      { ...demoResourceCatalogue.find(resource => resource.id === 'catalogue-lifting-equipment')!, quantity: 1 },
+    ],
+  },
+];
+
+const demoResourceSuggestionRules: Array<{ keywords: string[]; bundleId: string }> = [
+  { keywords: ['excavat', 'terrass', 'earthwork', 'fondation', 'foundation'], bundleId: 'groundworks-team' },
+  { keywords: ['béton', 'beton', 'concrete', 'coulage', 'slab', 'dalle'], bundleId: 'concrete-team' },
+  { keywords: ['install', 'montage', 'pose', 'equipment', 'équipement'], bundleId: 'installation-team' },
+];
+
+/** Deterministic demo stand-in for a future AI recommendation endpoint. */
+function getSuggestedResourceBundles(taskName: string): DemoResourceBundle[] {
+  const normalizedName = taskName.toLocaleLowerCase();
+  const ids = new Set(demoResourceSuggestionRules
+    .filter(rule => rule.keywords.some(keyword => normalizedName.includes(keyword)))
+    .map(rule => rule.bundleId));
+  return demoResourceBundles.filter(bundle => ids.has(bundle.id));
+}
 
 const demoResourceProvider: GanttResourceProvider = {
   async search(query) {
@@ -280,6 +340,97 @@ function confirmDemoTaskDeletion({ task, descendants }: GanttTaskDeleteContext):
   return window.confirm(`${demoText('deleteConfirm', { name: task.name })}${children}`);
 }
 
+function addDemoResourceBundle(context: GanttTaskEditorTemplateContext, bundle: DemoResourceBundle): void {
+  const assignedResourceIds = new Set((context.task.resources || []).map(resource => resource.resourceId || resource.id));
+  let addedCount = 0;
+  bundle.resources.forEach(reference => {
+    if (assignedResourceIds.has(reference.id)) return;
+    context.addResource({
+      id: `${context.task.id}--${reference.id}`,
+      resourceId: reference.id,
+      name: reference.name,
+      type: reference.type || 'work',
+      unit: reference.unit || 'U',
+      unitCost: reference.unitCost ?? 0,
+      quantity: reference.quantity ?? 1,
+      calendarId: reference.calendarId,
+      maxUnits: reference.maxUnits,
+      metadata: { ...reference.metadata, catalogId: reference.id, bundleId: bundle.id },
+    });
+    assignedResourceIds.add(reference.id);
+    addedCount += 1;
+  });
+  if (addedCount) showStatus(`${demoText('assignTeam')}: ${demoText(bundle.labelKey)} (${addedCount})`, 'success');
+}
+
+function renderDemoTaskEditor(context: GanttTaskEditorTemplateContext) {
+  const { task } = context;
+  const assignedResources = task.resources || [];
+  const suggestions = getSuggestedResourceBundles(task.name);
+  return html`
+    <div style="display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px;">
+      <label>${demoText('taskName')}
+        <input .value=${task.name} @change=${(event: Event) => context.updateTask({ name: (event.target as HTMLInputElement).value })} />
+      </label>
+      <label>${demoText('progress')}
+        <input type="number" min="0" max="100" step="1" .value=${String(task.progress)} @change=${(event: Event) => context.updateTask({ progress: Math.min(100, Math.max(0, Number((event.target as HTMLInputElement).value) || 0)) })} />
+      </label>
+      <label>${demoText('start')}
+        <input type="date" .value=${task.start} @change=${(event: Event) => context.updateTask({ start: (event.target as HTMLInputElement).value })} />
+      </label>
+      <label>${demoText('finish')}
+        <input type="date" .value=${task.end} @change=${(event: Event) => context.updateTask({ end: (event.target as HTMLInputElement).value })} />
+      </label>
+    </div>
+
+    <section class="editor-section" style="grid-column:1/-1; margin-top:16px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+        <strong>${demoText('resourcesForTask')}</strong>
+        <button class="primary" @click=${context.openResourcePicker}>＋ ${demoText('addSingleResource')}</button>
+      </div>
+
+      ${suggestions.length ? html`
+        <div style="display:grid; gap:7px; padding:10px; border:1px solid var(--gantt-control-border); border-radius:7px; background:color-mix(in srgb, var(--gantt-blue) 8%, transparent);">
+          <div>
+            <strong>${demoText('aiRecommendations')}</strong>
+            <small style="display:block; margin-top:3px; color:var(--gantt-muted);">${demoText('aiRecommendationsHint')}</small>
+          </div>
+          <div style="display:flex; flex-wrap:wrap; gap:7px;">
+            ${suggestions.map(bundle => html`<button @click=${() => addDemoResourceBundle(context, bundle)}>${demoText('addAll')} · ${demoText(bundle.labelKey)}</button>`)}
+          </div>
+        </div>
+      ` : nothing}
+
+      <div style="display:grid; gap:7px;">
+        <strong>${demoText('resourceTeams')}</strong>
+        ${demoResourceBundles.map(bundle => html`
+          <div style="display:flex; align-items:center; gap:8px; padding:8px; border:1px solid var(--gantt-control-border); border-radius:7px;">
+            <span style="min-width:0; flex:1 1 auto;"><strong>${demoText(bundle.labelKey)}</strong><small style="display:block; color:var(--gantt-muted);">${demoText(bundle.descriptionKey)} · ${bundle.resources.length} ${demoText('resources').toLocaleLowerCase(getDemoLocale())}</small></span>
+            <button @click=${() => addDemoResourceBundle(context, bundle)}>${demoText('assignTeam')}</button>
+          </div>
+        `)}
+      </div>
+
+      ${assignedResources.length ? html`
+        <div class="editor-resource-list">
+          <strong>${demoText('assignedResources')}</strong>
+          ${assignedResources.map(resource => html`
+            <div class="editor-resource-row">
+              <span>${resource.name}</span>
+              <small>${resource.quantity} ${resource.unit || ''} · ${new Intl.NumberFormat(getDemoLocale(), { maximumFractionDigits: 2 }).format(resourceCostWithCoefficient(resource))} €</small>
+              <button class="danger" @click=${() => context.removeResource(resource.id)}>×</button>
+            </div>
+          `)}
+        </div>
+      ` : html`<div class="editor-empty">${demoText('noAssignedResources')}</div>`}
+    </section>
+
+    <div class="task-editor-template-actions" style="grid-column:1/-1;">
+      <button class="primary" @click=${context.close}>${demoText('close')}</button>
+    </div>
+  `;
+}
+
 /**
  * Example of host-level configuration. Copy this object into another project
  * and keep only the options that are useful for that integration.
@@ -343,6 +494,10 @@ const demoOptions: GanttOptions = {
   showToday: true,
   showDependencies: true,
   taskEditorMode: 'built-in',
+  openTaskEditorOnCreate: true,
+  focusTaskOnCreate: true,
+  // Demo template: add one catalogue resource or assign a reusable team/work package.
+  taskEditorTemplate: renderDemoTaskEditor,
   ganttContextMenuTemplate: ({ fitToView, close, addTask, addPhase, date }) => html`
     <button @click=${addTask}>${demoText('addTaskOn', { date })}</button>
     <button @click=${addPhase}>${demoText('addPhaseOn', { date })}</button>

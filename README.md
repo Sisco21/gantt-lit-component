@@ -458,6 +458,8 @@ gantt.setOptions({
 
 The callback can use `updateTask`, `moveTask`, `addResource`, `removeResource`, `addDependency`, `removeDependency` and `close`. Use `taskEditorMode: 'external'` instead when the host application must own the full dialog or drawer.
 
+Set `openTaskEditorOnCreate: true` when newly created tasks should open this editor immediately, and `focusTaskOnCreate: true` to centre the new task in the timeline. The demo uses both options to offer single resource assignment through the catalogue and bulk assignment from reusable resource teams/work packages. The displayed “Suggested from the task name” section is a deterministic integration example; replace its keyword rules with a call to your AI or business recommendation service, then assign the returned `GanttResourceReference` objects through `addResource`.
+
 ### Custom task right-click menu
 
 Set `taskContextMenuTemplate` to replace the default task menu. The template receives the complete `task`, including `type`, `fields` and `metadata`, so a host can choose a different menu for any business parameter without duplicating planning logic. The component blocks the browser's native right-click menu and keeps the main menu and its submenus inside the viewport.
