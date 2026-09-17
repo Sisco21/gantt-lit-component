@@ -501,6 +501,8 @@ const demoOptions: GanttOptions = {
       { minZoom: .75, dayGrouping: 'day' },
     ],
   },
+  // The selected task's resources can be moved to a resizable secondary window.
+  resourcePanel: { detachable: true },
   nonWorkingDays: [0, 6], // Sunday and Saturday
   // Re-evaluated whenever the summary is calculated, so overdue status follows the current day.
   summaryReferenceDate: () => formatDate(new Date()),

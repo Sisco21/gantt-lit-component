@@ -289,6 +289,7 @@ export class GanttChart extends LitElement {
     /* Both panes share the available component height. The planning grid can shrink
        on compact viewports so the selected task's resources always retain a usable row. */
     .gantt-panel { display: flex; flex: 0 1 var(--gantt-panel-height, 440px); flex-direction: column; min-width: 0; min-height: 140px; overflow: hidden; }
+    .split-viewport.resources-undocked .gantt-panel { flex: 1 1 auto; }
     .gantt-viewport { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; position: relative; overscroll-behavior: contain; }
     .resources-viewport { flex: 1 1 var(--resources-panel-height, 260px); height: auto; min-height: 132px; overflow: hidden; position: relative; overscroll-behavior: contain; }
 
@@ -510,6 +511,11 @@ export class GanttChart extends LitElement {
 
     .resources-panel { display: grid; grid-template-columns: var(--header-width) minmax(var(--min-timeline-width, 160px), 1fr); grid-template-rows: auto minmax(0, 1fr) 18px; width: 100%; min-width: 0; height: 100%; border-top: 2px solid var(--gantt-border); background: var(--gantt-surface); }
     .resources-title { grid-column: 1 / -1; padding: 9px 12px; border-bottom: 1px solid var(--gantt-border); color: inherit; font-size: 12px; font-weight: 700; }
+    .resource-only-shell { display: grid; grid-template-rows: auto minmax(0, 1fr); width: 100%; height: 100%; min-height: 0; background: var(--gantt-surface); }
+    .resource-only-toolbar { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 9px 12px; border-bottom: 1px solid var(--gantt-border); background: var(--gantt-header); }
+    .resource-only-toolbar strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .resource-only-toolbar button { margin-left: auto; flex: 0 0 auto; }
+    .resource-only-shell .resources-viewport { height: auto; min-height: 0; }
     .resource-resizer { flex: 0 0 8px; width: 100%; min-width: 280px; height: 8px; border-top: 1px solid var(--gantt-control-border); border-bottom: 1px solid var(--gantt-border); background: var(--gantt-header); cursor: row-resize; touch-action: none; }
     .resource-resizer:hover, .resource-resizer:focus-visible { background: #dbeafe; outline: 0; }
     .resource-context-backdrop { position: fixed; inset: 0; z-index: 90; pointer-events: none; }
@@ -640,6 +646,7 @@ export class GanttChart extends LitElement {
     else this.history.trim(this.getHistoryLimit());
     this.requestUpdate();
     this.emitProjectSummary();
+    this.syncDetachedResourceOptions();
   }
 
   private tasks: GanttTask[] = [];
@@ -655,6 +662,10 @@ export class GanttChart extends LitElement {
   private statusMessage = '';
   private statusKind: 'info' | 'success' | 'error' = 'info';
   private resourceContextMenu?: { taskId: string; x: number; y: number };
+  private resourcePanelOnly = false;
+  private detachedResourceWindow?: Window;
+  private detachedResourceChart?: GanttChart;
+  private readonly detachedResourceWindowName = `gantt-resources-${this.createId()}`;
   private ganttContextMenu?: { x: number; y: number; date: string };
   private taskContextMenu?: { taskId: string; x: number; y: number };
   private taskContextSubmenuOpen = false;
@@ -738,6 +749,7 @@ export class GanttChart extends LitElement {
     if (this.timelineSynchronizationFrame !== undefined) window.cancelAnimationFrame(this.timelineSynchronizationFrame);
     this.ganttViewportResizeObserver?.disconnect();
     this.resourceTimelineResizeObserver?.disconnect();
+    this.closeDetachedResourceWindow(false);
     super.disconnectedCallback();
   }
 
@@ -768,6 +780,7 @@ export class GanttChart extends LitElement {
       }
     }
     if (changed.has('taskColors')) this.applyColors();
+    if (changed.has('theme') || changed.has('visualStyle') || changed.has('taskColors')) this.syncDetachedResourceAppearance();
     this.updateStickyTaskLabels();
     if (this.taskContextMenu && this.taskContextSubmenuOpen) {
       this.renderRoot.querySelector<HTMLElement>('.gantt-context-submenu')?.classList.add('open');
@@ -775,11 +788,13 @@ export class GanttChart extends LitElement {
   }
 
   render() {
+    if (this.resourcePanelOnly) return this.renderDetachedResourcePanel();
     const flatTasks = this.getFlatTasks();
     this.prepareRenderCaches(flatTasks);
     const visibleTasks = getVisibleTasks(this.tasks);
     const virtualRows = this.getVirtualTaskRows(visibleTasks);
     const selectedTask = this.selectedTaskId ? this.renderTaskIndex.get(this.selectedTaskId) || null : null;
+    const showEmbeddedResources = Boolean(selectedTask && !this.resourcesUndocked);
     const range = this.alignRangeToWeeks(getDateRange(flatTasks));
     const totalDays = Math.max(31, diffDays(range.start, range.end) + 1);
     const dayWidth = this.getDayWidth();
@@ -810,6 +825,7 @@ export class GanttChart extends LitElement {
           <span class="toolbar-separator"></span>
           <button @click=${() => this.addChildTask('')}>＋ ${this.t('addTask')}</button>
           <button class="danger" @click=${this.deleteSelected} ?disabled=${!this.selectedTaskId || !this.isTaskDeletionEnabled() || this.taskDeletionRequests.has(this.selectedTaskId || '')}>${this.t('delete')}</button>
+          ${this.options.resourcePanel?.detachable ? html`<button @click=${this.resourcesUndocked ? this.dockResources : this.undockResources} ?disabled=${!this.selectedTaskId}>${this.resourcesUndocked ? this.t('dockResources') : this.t('undockResources')}</button>` : nothing}
           <button @click=${this.expandAllParents}>${this.t('expandAll')}</button>
           <button @click=${this.collapseAllParents}>${this.t('collapseAll')}</button>
           ${this.isColumnSettingsEnabled() ? html`<span class="column-menu-wrapper">
@@ -831,7 +847,7 @@ export class GanttChart extends LitElement {
           </span>
             ${this.statusMessage ? html`<span class="status ${this.statusKind}">${this.statusMessage}</span>` : nothing}
           </div>
-        <div class="split-viewport" @wheel=${this.handleWheel}>
+        <div class="split-viewport ${this.resourcesUndocked ? 'resources-undocked' : ''}" @wheel=${this.handleWheel}>
           <div class="gantt-panel">
             <div class="gantt-viewport" @scroll=${this.handleGanttViewportScroll}>
             <div class="gantt-layout">
@@ -861,8 +877,8 @@ export class GanttChart extends LitElement {
               <div class="gantt-horizontal-scroll" @scroll=${this.syncTimelineGridScroll}><div class="gantt-scroll-spacer timeline"></div></div>
             </div>
           </div>
-          ${selectedTask ? html`<div class="resource-resizer" role="separator" tabindex="0" aria-label=${this.t('resizeResourceGrid')} @pointerdown=${this.startResourceResize}></div>` : nothing}
-          ${selectedTask ? html`<div class="resources-viewport">${this.renderResourcePanel(selectedTask, range.start, totalDays, dayWidth)}</div>` : nothing}
+          ${showEmbeddedResources ? html`<div class="resource-resizer" role="separator" tabindex="0" aria-label=${this.t('resizeResourceGrid')} @pointerdown=${this.startResourceResize}></div>` : nothing}
+          ${showEmbeddedResources && selectedTask ? html`<div class="resources-viewport">${this.renderResourcePanel(selectedTask, range.start, totalDays, dayWidth)}</div>` : nothing}
         </div>
         ${this.renderResourceContextMenu()}
         ${this.renderGanttContextMenu()}
@@ -908,6 +924,195 @@ export class GanttChart extends LitElement {
   /** Applies view and integration options and immediately refreshes the component. */
   setOptions(options: GanttOptions): void {
     this.options = options;
+  }
+
+  /** True while the selected task's resources are displayed in a secondary window. */
+  get resourcesUndocked(): boolean {
+    return Boolean(this.detachedResourceWindow && !this.detachedResourceWindow.closed);
+  }
+
+  /** Opens the selected task's resource grid in a resizable secondary browser window. */
+  undockResources = (): boolean => {
+    if (this.resourcePanelOnly || !this.selectedTaskId || typeof window === 'undefined') return false;
+    if (this.detachedResourceWindow?.closed) this.clearDetachedResourceWindow(false);
+    if (this.resourcesUndocked) {
+      this.syncDetachedResourceData();
+      this.detachedResourceWindow?.focus();
+      return true;
+    }
+
+    const panel = this.options.resourcePanel;
+    const width = Math.max(480, Math.round(panel?.windowWidth || 980));
+    const height = Math.max(320, Math.round(panel?.windowHeight || 640));
+    const resourceWindow = window.open('', this.detachedResourceWindowName, `popup=yes,resizable=yes,scrollbars=yes,width=${width},height=${height}`);
+    if (!resourceWindow) {
+      this.setStatus(this.t('resourcesWindowBlocked'), 'error');
+      return false;
+    }
+
+    const selectedTask = this.findTask(this.selectedTaskId);
+    resourceWindow.document.title = panel?.windowTitle || `${this.t('resources')} — ${selectedTask?.name || ''}`;
+    resourceWindow.document.documentElement.style.height = '100%';
+    resourceWindow.document.body.style.cssText = 'width:100%;height:100%;margin:0;overflow:hidden;';
+    this.detachedResourceWindow = resourceWindow;
+    resourceWindow.document.body.textContent = this.t('resources');
+    const moduleScript = resourceWindow.document.createElement('script');
+    moduleScript.type = 'module';
+    moduleScript.src = import.meta.url;
+    moduleScript.addEventListener('load', () => this.mountDetachedResourcePanel(resourceWindow), { once: true });
+    moduleScript.addEventListener('error', () => {
+      if (this.detachedResourceWindow !== resourceWindow) return;
+      resourceWindow.document.body.textContent = this.t('resourcesWindowBlocked');
+      this.setStatus(this.t('resourcesWindowBlocked'), 'error');
+    }, { once: true });
+    resourceWindow.document.head.append(moduleScript);
+    resourceWindow.addEventListener('pagehide', () => this.clearDetachedResourceWindow(true), { once: true });
+    this.dispatch('resources-undocked', { taskId: this.selectedTaskId });
+    this.requestUpdate();
+    return true;
+  };
+
+  /** Mounts a component registered in the secondary window's own custom-element registry. */
+  private mountDetachedResourcePanel(resourceWindow: Window): void {
+    if (this.detachedResourceWindow !== resourceWindow || resourceWindow.closed) return;
+    const resourceChart = resourceWindow.document.createElement('gantt-chart') as unknown as GanttChart;
+    resourceChart.resourcePanelOnly = true;
+    resourceChart.style.height = '100%';
+    resourceChart.projectId = this.projectId;
+    resourceChart.autoSave = false;
+    resourceChart.theme = this.theme;
+    resourceChart.visualStyle = this.visualStyle;
+    resourceChart.taskColors = this.taskColors;
+    resourceChart.resourceProvider = this.resourceProvider;
+    resourceChart.options = this.getDetachedResourceOptions();
+    resourceChart.data = stringifyJson(this.getData());
+    resourceWindow.document.body.replaceChildren(resourceChart);
+
+    this.detachedResourceChart = resourceChart;
+    resourceChart.addEventListener('tasks-changed', event => {
+      if (this.detachedResourceChart !== resourceChart) return;
+      const change = (event as CustomEvent<GanttChange>).detail;
+      this.applyData(change.data, 'set-data', true);
+    });
+    resourceChart.addEventListener('resources-dock-requested', this.dockResources);
+    this.copyGanttCssVariables(resourceChart);
+    this.syncDetachedResourceData();
+    void resourceChart.updateComplete.then(() => this.connectDetachedResourceScroll(resourceChart));
+  }
+
+  /** Closes the secondary resource window and restores the embedded resource panel. */
+  dockResources = (): void => this.closeDetachedResourceWindow(true);
+
+  private renderDetachedResourcePanel() {
+    const flatTasks = this.getFlatTasks();
+    this.prepareRenderCaches(flatTasks);
+    const task = this.selectedTaskId ? this.renderTaskIndex.get(this.selectedTaskId) : undefined;
+    const range = this.alignRangeToWeeks(getDateRange(flatTasks));
+    const totalDays = Math.max(31, diffDays(range.start, range.end) + 1);
+    const dayWidth = this.getDayWidth();
+    const timelineWidth = totalDays * dayWidth;
+    const sizing = this.getTaskGridSizing();
+    return html`
+      <div class="resource-only-shell" @click=${this.closeOpenContextMenus} @contextmenu=${this.preventNativeContextMenu} style="--header-width:${this.getHeaderWidth(sizing)}px; --min-timeline-width:${sizing.minTimelineWidth}px; --timeline-width:${timelineWidth}px; --day-width:${dayWidth}px">
+        <header class="resource-only-toolbar">
+          <strong>${task ? `${this.t('resources')} — ${task.name}` : this.t('resources')}</strong>
+          <button @click=${() => this.dispatch('resources-dock-requested', undefined)}>${this.t('dockResources')}</button>
+        </header>
+        <div class="resources-viewport">
+          ${task ? this.renderResourcePanel(task, range.start, totalDays, dayWidth) : html`<div class="empty">${this.t('noResourceAssigned')}</div>`}
+        </div>
+      </div>
+      ${this.renderResourceContextMenu()}
+      ${this.renderResourcePicker()}
+    `;
+  }
+
+  private getDetachedResourceOptions(): GanttOptions {
+    return {
+      ...this.options,
+      resourcePanel: undefined,
+      history: { ...this.options.history, enabled: false, showControls: false },
+      onTaskSelect: undefined,
+      onTasksChange: undefined,
+    };
+  }
+
+  private closeDetachedResourceWindow(notify: boolean): void {
+    const resourceWindow = this.detachedResourceWindow;
+    const wasUndocked = Boolean(resourceWindow || this.detachedResourceChart);
+    this.detachedResourceWindow = undefined;
+    this.detachedResourceChart = undefined;
+    if (resourceWindow && !resourceWindow.closed) resourceWindow.close();
+    if (notify && wasUndocked) {
+      this.dispatch('resources-docked', undefined);
+      this.requestUpdate();
+    }
+  }
+
+  private clearDetachedResourceWindow(notify: boolean): void {
+    const wasUndocked = Boolean(this.detachedResourceWindow || this.detachedResourceChart);
+    this.detachedResourceWindow = undefined;
+    this.detachedResourceChart = undefined;
+    if (notify && wasUndocked) {
+      this.dispatch('resources-docked', undefined);
+      this.requestUpdate();
+    }
+  }
+
+  private syncDetachedResourceOptions(): void {
+    if (!this.detachedResourceChart) return;
+    this.detachedResourceChart.options = this.getDetachedResourceOptions();
+  }
+
+  private syncDetachedResourceAppearance(): void {
+    const resourceChart = this.detachedResourceChart;
+    if (!resourceChart) return;
+    resourceChart.theme = this.theme;
+    resourceChart.visualStyle = this.visualStyle;
+    resourceChart.taskColors = this.taskColors;
+    this.copyGanttCssVariables(resourceChart);
+  }
+
+  private syncDetachedResourceData(): void {
+    const resourceChart = this.detachedResourceChart;
+    if (!resourceChart || this.detachedResourceWindow?.closed) return;
+    const data = stringifyJson(this.getData());
+    if (resourceChart.data !== data) resourceChart.data = data;
+    resourceChart.projectId = this.projectId;
+    this.syncDetachedResourceAppearance();
+    void resourceChart.updateComplete.then(() => {
+      if (this.detachedResourceChart !== resourceChart || !this.selectedTaskId) return;
+      resourceChart.selectTask(this.selectedTaskId);
+      const scrollLeft = this.renderRoot.querySelector<HTMLElement>('.timeline-scroll')?.scrollLeft || 0;
+      this.syncDetachedResourceScroll(scrollLeft);
+      const selectedTask = this.findTask(this.selectedTaskId);
+      const configuredTitle = this.options.resourcePanel?.windowTitle;
+      if (this.detachedResourceWindow && !configuredTitle) this.detachedResourceWindow.document.title = `${this.t('resources')} — ${selectedTask?.name || ''}`;
+    });
+  }
+
+  private copyGanttCssVariables(target: HTMLElement): void {
+    const source = getComputedStyle(this);
+    for (const property of Array.from(source)) {
+      if (property.startsWith('--gantt-')) target.style.setProperty(property, source.getPropertyValue(property));
+    }
+  }
+
+  private connectDetachedResourceScroll(resourceChart: GanttChart): void {
+    resourceChart.shadowRoot?.addEventListener('scroll', event => {
+      const target = event.target as HTMLElement;
+      if (this.detachedResourceChart !== resourceChart || !target?.classList?.contains('resource-timeline')) return;
+      this.synchronizeTimelineScroll(target.scrollLeft);
+    }, true);
+  }
+
+  private syncDetachedResourceScroll(scrollLeft: number): void {
+    const root = this.detachedResourceChart?.shadowRoot;
+    if (!root) return;
+    this.setScrollLeft(root.querySelector<HTMLElement>('.resource-timeline'), scrollLeft);
+    this.setScrollLeft(root.querySelector<HTMLElement>('.resource-day-header'), scrollLeft);
+    const [, scrollbar] = root.querySelectorAll<HTMLElement>('.resource-horizontal-scroll');
+    this.setScrollLeft(scrollbar, scrollLeft);
   }
 
   /** Sets the effective task-row height (28–96 px) and persists it through columnSettings.onChange. */
@@ -1002,6 +1207,7 @@ export class GanttChart extends LitElement {
     this.dispatch('task-selected', { id: taskId, task });
     this.options.onTaskSelect?.(taskId, task);
     this.requestUpdate();
+    this.syncDetachedResourceData();
   }
 
   /** Selects a row from the left grid and brings its bar to the centre of the timeline. */
@@ -2024,7 +2230,10 @@ export class GanttChart extends LitElement {
     if (!this.historyRestoring) this.resetHistory();
     this.requestUpdate();
     if (notify) this.commit(reason);
-    else this.emitProjectSummary();
+    else {
+      this.emitProjectSummary();
+      this.syncDetachedResourceData();
+    }
   }
 
   private replaceFlatTasks(tasks: GanttTask[], reason: GanttChangeReason, taskId?: string): void {
@@ -2039,6 +2248,7 @@ export class GanttChart extends LitElement {
     this.dispatch('tasks-changed', change);
     this.emitProjectSummary();
     this.options.onTasksChange?.(change.data);
+    this.syncDetachedResourceData();
     if (this.autoSave && (this.persistenceAdapter || this.saveHook)) {
       const saves: Promise<void>[] = [];
       if (this.persistenceAdapter) saves.push(this.persistenceAdapter.save(change));
@@ -2374,6 +2584,7 @@ export class GanttChart extends LitElement {
     this.setScrollLeft(resourceHeader, scrollLeft);
     this.setScrollLeft(ganttScrollbar, scrollLeft);
     this.setScrollLeft(resourceScrollbar, scrollLeft);
+    this.syncDetachedResourceScroll(scrollLeft);
     this.updateStickyTaskLabels(scrollLeft, timeline?.clientWidth);
     if (resourceTimeline) this.updateResourceTimelineViewport(resourceTimeline.scrollLeft, resourceTimeline.clientWidth);
   }

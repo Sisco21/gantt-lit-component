@@ -311,6 +311,30 @@ gantt.persistenceAdapter = new LocalStorageGanttPersistenceAdapter();
 gantt.autoSave = true;
 ```
 
+## Detach the resource panel
+
+Enable a secondary, resizable browser window for the selected task's resource grid:
+
+```ts
+gantt.setOptions({
+  resourcePanel: {
+    detachable: true,
+    windowTitle: 'Project resources',
+    windowWidth: 1180,
+    windowHeight: 680,
+  },
+});
+```
+
+The component then shows **Undock resources** when a task is selected. The window can be moved to another monitor and includes a **Dock resources** action. You can also control it from the host:
+
+```ts
+gantt.undockResources(); // Returns false when no task is selected or a pop-up is blocked.
+gantt.dockResources();
+```
+
+The embedded panel makes room for the Gantt while resources are detached. The main Gantt remains the source of truth: resource edits in the secondary window are immediately applied to it, while task selection, project data, horizontal date position, theme, visual style and `--gantt-*` CSS variables are kept in sync. The browser decides which monitor opens the window; users can move it to another screen. Open it directly from a user gesture when popup blockers are active.
+
 ## Use an API resource catalogue
 
 Resources assigned to a task are project data. A resource catalogue is external reference data and is loaded on demand through `GanttResourceProvider`. This keeps the component independent from your API and authentication model.

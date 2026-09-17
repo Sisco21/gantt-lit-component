@@ -408,6 +408,9 @@ export interface GanttTranslations {
   noPlanningData: string;
   today: string;
   resources: string;
+  undockResources: string;
+  dockResources: string;
+  resourcesWindowBlocked: string;
   cost: string;
   unit: string;
   unitCost: string;
@@ -592,6 +595,18 @@ export interface GanttResourceHeaderOptions {
   zoomLevels?: GanttResourceHeaderZoomLevel[];
 }
 
+/** Controls the optional secondary window used to display the selected task's resources. */
+export interface GanttResourcePanelOptions {
+  /** Shows an Undock resources control in the component toolbar. Defaults to false. */
+  detachable?: boolean;
+  /** Title used for the secondary window. Defaults to the selected task and Resources. */
+  windowTitle?: string;
+  /** Initial width of the secondary window in pixels. Defaults to 980. */
+  windowWidth?: number;
+  /** Initial height of the secondary window in pixels. Defaults to 640. */
+  windowHeight?: number;
+}
+
 /** Controls the draggable split between the task grid and the timeline. */
 export interface GanttTaskGridSplitterOptions {
   /** Enables the draggable separator. Defaults to true. */
@@ -639,6 +654,8 @@ export interface GanttOptions {
   maxHeight?: number | string;
   /** Preferred height of the resource grid. It contracts on compact screens while preserving a usable resource row. */
   resourcesMaxHeight?: number | string;
+  /** Enables an optional secondary window for the selected task's resource grid. */
+  resourcePanel?: GanttResourcePanelOptions;
   taskColumns?: GanttColumn[];
   /** Columns shown in the resource grid before the remove action. */
   resourceColumns?: GanttResourceColumn[];

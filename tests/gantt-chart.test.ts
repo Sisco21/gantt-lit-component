@@ -71,6 +71,39 @@ describe('GanttChart task-bar editing', () => {
     expect(gantt.shadowRoot?.querySelector('.task-editor-dialog')).not.toBeNull();
   });
 
+  it('opens a selected task resource panel in a secondary window and docks it back', async () => {
+    const popupBody = document.createElement('body');
+    const popupDocument = {
+      title: '',
+      documentElement: document.createElement('html'),
+      body: popupBody,
+      createElement: document.createElement.bind(document),
+      head: { append: (node: Node) => node.dispatchEvent(new Event('load')) },
+    } as unknown as Document;
+    const popup = {
+      closed: false,
+      close: vi.fn(),
+      focus: vi.fn(),
+      addEventListener: vi.fn(),
+      document: popupDocument,
+    } as unknown as Window;
+    vi.spyOn(window, 'open').mockReturnValue(popup);
+    gantt.options = { resourcePanel: { detachable: true } };
+    gantt.selectTask('child');
+
+    expect(gantt.undockResources()).toBe(true);
+    await gantt.updateComplete;
+    expect(gantt.resourcesUndocked).toBe(true);
+    expect(popupBody.firstElementChild).toBeInstanceOf(GanttChart);
+    expect(gantt.shadowRoot?.querySelector('.resources-viewport')).toBeNull();
+
+    gantt.dockResources();
+    await gantt.updateComplete;
+    expect(popup.close).toHaveBeenCalledOnce();
+    expect(gantt.resourcesUndocked).toBe(false);
+    expect(gantt.shadowRoot?.querySelector('.resources-viewport')).not.toBeNull();
+  });
+
   it('routes a task-grid double-click to a host-owned editor', async () => {
     const onTaskEdit = vi.fn();
     gantt.options = {

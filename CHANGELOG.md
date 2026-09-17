@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Optional detachable Resource panel with a synchronized, resizable secondary window.
+- `resourcePanel` configuration, `undockResources()` / `dockResources()` APIs, and localized dock controls.
+
 ## [1.1.0] - 2026-09-10
 
 ### Added
