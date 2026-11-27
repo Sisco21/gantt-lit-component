@@ -2,7 +2,7 @@ import type {
   GanttChart, GanttResource, GanttResourceCreationContext, GanttResourceCreationDraft,
   GanttResourceReference, GanttTask, GanttTaskCreationContext, GanttTaskCreationDraft,
   GanttResourceCreationInputTemplate,
-} from '../src/index';
+} from 'gantt-lit-component';
 
 /** The host implements these methods using its authenticated business API. */
 export interface InlineCreationApi {

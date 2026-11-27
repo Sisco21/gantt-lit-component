@@ -19,6 +19,10 @@ describe('inline task and resource creation', () => {
   const row = (resource = false, chart = gantt) => chart.shadowRoot!.querySelector<HTMLElement>(`[data-inline-row="${resource ? 'resource' : 'task'}"]`)!;
   const input = (field: string, resource = false, chart = gantt) => row(resource, chart).querySelector<HTMLInputElement>(`[data-field="${field}"]`)!;
   const enter = (resource = false, chart = gantt) => row(resource, chart).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, composed: true, cancelable: true }));
+  async function freeMode(chart = gantt) {
+    const select = row(true, chart).querySelector<HTMLSelectElement>('[data-inline-mode]')!;
+    select.value = 'free'; select.dispatchEvent(new Event('change', { bubbles: true })); await settle(chart);
+  }
   async function settle(chart = gantt) { await new Promise(resolve => setTimeout(resolve, 0)); await chart.updateComplete; }
   async function type(field: string, value: string, resource = false, chart = gantt) {
     const element = input(field, resource, chart);
@@ -135,12 +139,15 @@ describe('inline task and resource creation', () => {
     expect(input('name', true).value).toBe('');
   });
 
-  it('creates a free assignment on confirmation when no catalogue result was chosen', async () => {
+  it('requires an explicit free choice after an empty catalogue search', async () => {
     const search = vi.fn(async () => []);
     const save = vi.fn(async draft => ({ ...draft, id: 'free-assignment' } as GanttResource));
     configure({ resources: { enabled: true, modes: ['catalogue', 'free'], search, requiredFields: ['name', 'unit', 'quantity', 'unitCost'], save } }); await settle();
     await type('name', 'Custom crew', true); await type('unit', 'h', true); await type('quantity', '4', true); await type('unitCost', '30', true);
     expect(save).not.toHaveBeenCalled(); // Searching and filling never save on their own.
+    enter(true); await settle(); expect(save).not.toHaveBeenCalled();
+    expect(row(true).textContent).toContain('Aucune ressource trouvée');
+    await freeMode();
     enter(true); await settle();
     expect(save).toHaveBeenCalledWith(expect.not.objectContaining({ resourceId: expect.anything() }), expect.objectContaining({ mode: 'free' }));
     expect(save.mock.calls[0][1].reference).toBeUndefined();
@@ -156,11 +163,13 @@ describe('inline task and resource creation', () => {
     enter(true); await settle(); expect(gantt.options.inlineCreation!.resources!.save).not.toHaveBeenCalled();
   });
 
-  it('does not require a catalogue selection when free resources are allowed, even with suggestions', async () => {
+  it('does not turn unselected catalogue suggestions into free assignments', async () => {
     const save = vi.fn(async draft => ({ ...draft, id: 'free' } as GanttResource));
     configure({ resources: { enabled: true, modes: ['catalogue', 'free'], search: async () => [reference], save } });
     await settle(); await type('name', 'Engineer typed without selection', true);
     expect(row(true).querySelector('[data-inline-suggestion]')).not.toBeNull();
+    enter(true); await settle(); expect(save).not.toHaveBeenCalled();
+    await freeMode();
     enter(true); await settle();
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ name: 'Engineer typed without selection' }), expect.objectContaining({ mode: 'free' }));
     expect(save.mock.calls[0][0].resourceId).toBeUndefined();
@@ -281,7 +290,7 @@ describe('inline task and resource creation', () => {
   });
 
   it('uses one draft and one host save across embedded and detached panels', async () => {
-    configure(); await settle(); await type('name', 'Shared draft', true);
+    configure(); await settle(); await freeMode(); await type('name', 'Shared draft', true);
     const popupBody = document.createElement('div');
     document.body.append(popupBody);
     const popup = {
@@ -312,5 +321,54 @@ describe('inline task and resource creation', () => {
       expect(gantt.options.inlineCreation!.resources!.save).toHaveBeenCalledTimes(2);
       expect(gantt.getData().tasks[0].resources!.find(item => item.resourceId === reference.id)).toBeDefined();
     } finally { gantt.dockResources(); popupBody.remove(); }
+  });
+
+  it('uses the command persistence pipeline for continuous creation without inserting twice', async () => {
+    const persist = vi.fn(async request => ({ data: request.proposedData }));
+    configure({ tasks: { enabled: true, command: (draft, context) => ({ id: context.correlationId!, operation: {
+      type: 'task.create', task: { ...task, ...draft, id: `task-${context.correlationId}`, parentId: context.parentId }, placement: { parentId: context.parentId },
+    } }) } });
+    gantt.options = { ...gantt.options, commands: { enabled: true, mode: 'controlled', persist } };
+    const result = vi.fn(); gantt.addEventListener('inline-creation-result', result);
+    await settle(); await type('name', 'First'); enter(); enter(); await settle();
+    await type('name', '第二'); enter(); await settle();
+    expect(persist).toHaveBeenCalledTimes(2); expect(gantt.getData().tasks).toHaveLength(3);
+    expect(gantt.getData().tasks.map(task => task.name)).toEqual(['Task', 'First', '第二']);
+    expect(input('name').value).toBe(''); expect(result).toHaveBeenCalledTimes(2);
+    expect(result.mock.calls[0][0].detail.result.status).toBe('committed');
+  });
+
+  it('discards unsaved resource drafts only when configured and keeps a pending original target', async () => {
+    const pending = deferred<GanttResource>();
+    const save = vi.fn(() => pending.promise);
+    configure({ resources: { enabled: true, modes: ['free'], selectionChange: 'discard', save } });
+    gantt.setData({ tasks: [task, { ...task, id: 'second' }] }); gantt.selectTask('task'); await settle();
+    await type('name', 'Discard me', true); gantt.selectTask('second'); gantt.selectTask('task'); await settle();
+    expect(input('name', true).value).toBe('');
+    await type('name', 'Original target', true); enter(true); await settle(); gantt.selectTask('second');
+    pending.resolve({ id: 'saved-original', name: 'Original target', type: 'work', unitCost: 0, quantity: 1 }); await settle();
+    expect(gantt.getData().tasks.find(task => task.id === 'task')!.resources![0].id).toBe('saved-original');
+    expect(gantt.getData().tasks.find(task => task.id === 'second')!.resources).toHaveLength(0);
+  });
+
+  it.each(['fr-FR', 'en-US', 'ar'])('supports keyboard drafts with Unicode and translated RTL labels: %s', async locale => {
+    configure(); gantt.dir = locale === 'ar' ? 'rtl' : 'ltr';
+    gantt.options = { ...gantt.options, locale, translations: locale === 'ar' ? { newTask: 'مهمة جديدة', inlineResourceMode: 'طريقة الإنشاء' } : undefined };
+    await settle(); await type('name', '同名 مهمة 🚀 '.repeat(20));
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true });
+    input('name').dispatchEvent(tab); expect(tab.defaultPrevented).toBe(false);
+    enter(); await settle(); expect(gantt.getData().tasks.at(-1)!.name).toContain('同名 مهمة 🚀');
+    if (locale === 'ar') expect(input('name').getAttribute('aria-label')).toContain('مهمة جديدة');
+    gantt.options = { ...gantt.options, readOnly: true }; await settle(); expect(row()).toBeNull(); expect(row(true)).toBeNull();
+  });
+
+  it('leaves multiline Enter to a host editor and ignores legacy composition key events', async () => {
+    configure({ resources: { enabled: true, modes: ['free'], save: vi.fn(), inputTemplate: context => context.column.key === 'name'
+      ? html`<textarea data-field="name" @input=${(event: Event) => context.onInput((event.target as HTMLTextAreaElement).value)}></textarea>` : context.renderDefault() } });
+    await settle(); await type('name', 'Two lines', true);
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    input('name', true).dispatchEvent(event); expect(event.defaultPrevented).toBe(false);
+    input('name', true).dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, bubbles: true }));
+    await settle(); expect(gantt.options.inlineCreation!.resources!.save).not.toHaveBeenCalled();
   });
 });

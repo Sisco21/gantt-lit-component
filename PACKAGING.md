@@ -30,19 +30,19 @@ pnpm pack
 This produces a file similar to:
 
 ```text
-gantt-lit-component-1.7.0.tgz
+gantt-lit-component-1.9.0.tgz
 ```
 
 Install that archive in the consuming application:
 
 ```bash
-pnpm add "D:\projects\sandBox\GanttComponent\gantt-lit-component-1.7.0.tgz"
+pnpm add "D:\projects\sandBox\GanttComponent\gantt-lit-component-1.9.0.tgz"
 ```
 
 Use a relative path when both projects are checked out together:
 
 ```bash
-pnpm add ../GanttComponent/gantt-lit-component-1.7.0.tgz
+pnpm add ../GanttComponent/gantt-lit-component-1.9.0.tgz
 ```
 
 ## Install from a package registry
@@ -59,7 +59,7 @@ For a private registry, configure the registry and authentication in the consumi
 After publication, install a versioned dependency:
 
 ```bash
-pnpm add @your-company/gantt-lit-component@1.7.0
+pnpm add @your-company/gantt-lit-component@1.9.0
 ```
 
 Always publish a new semantic version for every release. Use a patch version for fixes, a minor version for backward-compatible features, and a major version for breaking API changes.

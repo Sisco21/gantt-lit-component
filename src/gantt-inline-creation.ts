@@ -1,5 +1,7 @@
 import { css, html, nothing } from 'lit';
 import { ifDefined } from 'lit/directives/if-defined.js';
+import { GanttCommandError } from './gantt-commands';
+import type { GanttCommand, GanttCommandResult } from './gantt-command-types';
 import type {
   GanttColumn, GanttOptions, GanttResource, GanttResourceColumn,
   GanttResourceCreationContext, GanttResourceCreationDraft, GanttResourceCreationMode, GanttInlineCreationShortcut,
@@ -8,6 +10,7 @@ import type {
 } from './types';
 
 interface Draft<T, C> {
+  correlationId: string;
   value: T;
   context?: C;
   inputs: Record<string, string>;
@@ -16,9 +19,14 @@ interface Draft<T, C> {
   results: GanttResourceReference[];
   searching: boolean;
   request: number;
+  searched: boolean;
 }
 
 interface InlineHost {
+  execute: (command: GanttCommand) => Promise<GanttCommandResult>;
+  result: (result: GanttCommandResult, taskId?: string) => void;
+  data: () => import('./types').GanttData;
+  revision: () => number;
   options: () => GanttOptions;
   provider: () => GanttResourceProvider | undefined;
   taskContext: () => GanttTaskCreationContext;
@@ -32,7 +40,7 @@ interface InlineHost {
 }
 
 function emptyDraft<T, C>(): Draft<T, C> {
-  return { value: {} as T, inputs: {}, busy: false, error: '', results: [], searching: false, request: 0 };
+  return { correlationId: crypto.randomUUID(), value: {} as T, inputs: {}, busy: false, error: '', results: [], searching: false, request: 0, searched: false };
 }
 
 function readField(value: object, key: string): unknown {
@@ -82,17 +90,17 @@ export class GanttInlineCreation {
 
   taskEnabled(): boolean {
     const options = this.host.options().inlineCreation;
-    if (options?.readOnly || options?.tasks?.enabled !== true) return false;
+    if (this.host.options().readOnly || options?.readOnly || options?.tasks?.enabled !== true) return false;
     try {
       const context = this.task.context || this.context();
       return options.tasks.canCreate?.(context) !== false
-        && (!context.parentId || this.host.isEditable(this.host.findTask(context.parentId)));
+        && (!context.parentId || Boolean(this.host.findTask(context.parentId)) && this.host.isEditable(this.host.findTask(context.parentId)));
     } catch { return false; }
   }
 
   resourceEnabled(task: GanttTask | null): boolean {
     const options = this.host.options().inlineCreation;
-    return !options?.readOnly && options?.resources?.enabled === true && this.modes().length > 0
+    return !this.host.options().readOnly && !options?.readOnly && options?.resources?.enabled === true && this.modes().length > 0
       && Boolean(task) && this.host.isEditable(task) && options.resources.canCreate?.(task!) !== false;
   }
 
@@ -104,6 +112,7 @@ export class GanttInlineCreation {
     if (this.task.context) return true;
     try {
       const context = this.context();
+      context.correlationId = this.task.correlationId;
       const defaults = this.host.options().inlineCreation?.tasks?.defaults;
       const today = new Date().toISOString().slice(0, 10);
       this.task.value = structuredClone({
@@ -124,8 +133,8 @@ export class GanttInlineCreation {
     const draft = this.resource(task.id);
     if (draft.context) return true;
     try {
-      const mode = this.modes().includes('free') ? 'free' : 'catalogue';
-      const context: GanttResourceCreationContext = { task: structuredClone(task), mode };
+      const mode = this.modes().length === 1 && this.modes()[0] === 'free' ? 'free' : 'catalogue';
+      const context: GanttResourceCreationContext = { task: structuredClone(task), mode, correlationId: draft.correlationId };
       const defaults = this.host.options().inlineCreation?.resources?.defaults;
       draft.value = structuredClone({ type: 'work', quantity: 1, unitCost: 0,
         ...(typeof defaults === 'function' ? defaults(context) : defaults) });
@@ -137,6 +146,8 @@ export class GanttInlineCreation {
   }
 
   private errorMessage(error: unknown): string {
+    if (error instanceof GanttCommandError && error.code === 'INVALID_RESPONSE') return this.host.t('inlineInvalidResponse');
+    if (error instanceof GanttCommandError) return this.host.t(error.code === 'FORBIDDEN' || error.code === 'READ_ONLY' || error.code === 'NOT_FOUND' ? 'inlineNotAllowed' : 'inlineSaveFailed');
     return error instanceof Error && error.message ? error.message : this.host.t('inlineSaveFailed');
   }
 
@@ -147,17 +158,34 @@ export class GanttInlineCreation {
     if (taskId) this.resources.delete(taskId);
     else this.task = emptyDraft();
     this.host.update();
+    this.host.result({ id: draft.correlationId, status: 'cancelled', revision: this.host.revision(), affectedIds: [], issues: [] }, taskId);
+  }
+
+  selectionChanged(previous: string | null, next: string | null): void {
+    if (previous && previous !== next && this.host.options().inlineCreation?.resources?.selectionChange === 'discard') this.cancel(previous);
+  }
+
+  private changeMode(task: GanttTask, mode: GanttResourceCreationMode): void {
+    if (!this.modes().includes(mode) || !this.resourceEnabled(task) || !this.ensureResource(task)) return;
+    const state = this.resource(task.id);
+    if (state.busy) return;
+    this.clearReference(task.id);
+    state.context!.mode = mode;
+    state.searched = false;
+    state.error = '';
+    if (state.value.name) state.inputs.name = state.value.name;
+    this.host.update();
   }
 
   private keydown(event: KeyboardEvent, taskId?: string): void {
     // Keep component-wide shortcuts away from the row, including shadow-DOM retargeting.
     event.stopPropagation();
-    if (event.isComposing || event.defaultPrevented) return;
+    if (event.isComposing || event.keyCode === 229 || event.defaultPrevented) return;
     const config = this.host.options().inlineCreation;
     if (this.matchesKey(event, config?.cancelKey ?? 'Escape')) {
       event.preventDefault();
       this.cancel(taskId);
-    } else if (this.matchesKey(event, config?.confirmKey ?? 'Enter') && !(event.target as HTMLElement).closest('[data-inline-suggestion], select')) {
+    } else if (this.matchesKey(event, config?.confirmKey ?? 'Enter') && !event.composedPath().some(target => 'matches' in target && typeof target.matches === 'function' && target.matches('textarea, [contenteditable="true"], [data-inline-suggestion], select'))) {
       event.preventDefault();
       void this.save(taskId, event.currentTarget as HTMLElement);
     }
@@ -196,6 +224,8 @@ export class GanttInlineCreation {
       draft.error = this.host.t('inlineInvalid');
       invalid.focus();
       this.host.update();
+      this.host.result({ id: draft.correlationId, status: 'failed', revision: this.host.revision(), affectedIds: taskId ? [taskId] : [],
+        issues: [{ code: 'INVALID_DATA', params: { field: invalid.dataset.field || '' } }] }, taskId);
       return;
     }
     const root = row.getRootNode() as ShadowRoot;
@@ -213,13 +243,15 @@ export class GanttInlineCreation {
     draft.searching = false;
     draft.results = [];
     this.host.update();
+    let result: GanttCommandResult | undefined;
+    let saving = false;
+    let persisted = false;
     try {
       if (taskId) {
         const config = options!.resources!;
         const state = draft as Draft<GanttResourceCreationDraft, GanttResourceCreationContext>;
         const context = structuredClone(state.context!);
         context.task = structuredClone(task!);
-        context.mode = context.reference ? 'catalogue' : this.modes().includes('free') ? 'free' : 'catalogue';
         if (!this.modes().includes(context.mode)) throw new Error(this.host.t('inlineNotAllowed'));
         if (context.mode === 'catalogue' && !context.reference) throw new Error(this.host.t('inlineSelectReference'));
         const value = structuredClone(state.value);
@@ -232,12 +264,25 @@ export class GanttInlineCreation {
         const error = this.requiredError(value, config.requiredFields ?? ['name']) || await config.validate?.(value, context);
         if (error) throw new Error(error);
         if (!this.resourceEnabled(this.host.findTask(taskId)) || !this.modes().includes(context.mode)) throw new Error(this.host.t('inlineNotAllowed'));
-        const saved = await config.save(value, context);
-        if (!saved?.id || !saved.name || !Number.isFinite(saved.unitCost) || !Number.isFinite(saved.quantity)) throw new Error(this.host.t('inlineInvalidResponse'));
-        if (context.mode === 'catalogue' && saved.resourceId !== context.reference!.id) throw new Error(this.host.t('inlineInvalidResponse'));
-        if (context.mode === 'free' && saved.resourceId) throw new Error(this.host.t('inlineInvalidResponse'));
-        this.host.insertResource(taskId, structuredClone(saved));
-        this.resources.delete(taskId);
+        if (config.command) {
+          const command = config.command(value, context);
+          if (command.operation.type !== 'assignment.add' || command.operation.taskId !== taskId) throw new GanttCommandError('INVALID_COMMAND');
+          if ((command.operation.assignment.resourceId || undefined) !== (context.reference?.id || undefined)) throw new GanttCommandError('INVALID_COMMAND');
+          result = await this.host.execute(command);
+          if (result.status !== 'committed') throw new GanttCommandError(result.issues[0]?.code || 'PERSIST_FAILED', result.issues[0]?.params);
+          this.resources.delete(taskId);
+        } else {
+          saving = true;
+          if (!config.save) throw new GanttCommandError('HOST_REQUIRED');
+          const saved = await config.save(value, context);
+          persisted = true;
+          if (!saved?.id || !saved.name || !Number.isFinite(saved.unitCost) || !Number.isFinite(saved.quantity)) throw new GanttCommandError('INVALID_RESPONSE');
+          if (context.mode === 'catalogue' && saved.resourceId !== context.reference!.id) throw new GanttCommandError('INVALID_RESPONSE');
+          if (context.mode === 'free' && saved.resourceId) throw new GanttCommandError('INVALID_RESPONSE');
+          this.host.insertResource(taskId, structuredClone(saved));
+          this.resources.delete(taskId);
+          result = { id: draft.correlationId, status: 'committed', revision: this.host.revision(), affectedIds: [taskId], issues: [], values: structuredClone(this.host.data()), persisted: true };
+        }
       } else {
         const config = options!.tasks!;
         const state = draft as Draft<GanttTaskCreationDraft, GanttTaskCreationContext>;
@@ -246,15 +291,32 @@ export class GanttInlineCreation {
         const error = this.requiredError(value, config.requiredFields ?? ['name']) || await config.validate?.(value, context);
         if (error) throw new Error(error);
         if (!this.taskEnabled()) throw new Error(this.host.t('inlineNotAllowed'));
-        const saved = await config.save(value, context);
-        if (!saved?.id || !saved.name || !/^\d{4}-\d{2}-\d{2}$/.test(saved.start) || !/^\d{4}-\d{2}-\d{2}$/.test(saved.end) || !Number.isFinite(saved.progress)) throw new Error(this.host.t('inlineInvalidResponse'));
-        this.host.insertTask(structuredClone(saved), context);
-        this.task = emptyDraft();
+        if (config.command) {
+          const command = config.command(value, context);
+          if (command.operation.type !== 'task.create' || command.operation.placement.parentId !== context.parentId) throw new GanttCommandError('INVALID_COMMAND');
+          result = await this.host.execute(command);
+          if (result.status !== 'committed') throw new GanttCommandError(result.issues[0]?.code || 'PERSIST_FAILED', result.issues[0]?.params);
+          this.task = emptyDraft();
+        } else {
+          saving = true;
+          if (!config.save) throw new GanttCommandError('HOST_REQUIRED');
+          const saved = await config.save(value, context);
+          persisted = true;
+          if (!saved?.id || !saved.name || !/^\d{4}-\d{2}-\d{2}$/.test(saved.start) || !/^\d{4}-\d{2}-\d{2}$/.test(saved.end) || !Number.isFinite(saved.progress)) throw new GanttCommandError('INVALID_RESPONSE');
+          this.host.insertTask(structuredClone(saved), context);
+          this.task = emptyDraft();
+          result = { id: draft.correlationId, status: 'committed', revision: this.host.revision(), affectedIds: [saved.id], issues: [], values: structuredClone(this.host.data()), persisted: true };
+        }
       }
-    } catch (error) { draft.error = this.errorMessage(error); }
+    } catch (error) {
+      draft.error = this.errorMessage(error);
+      result ||= { id: draft.correlationId, status: 'failed', revision: this.host.revision(), affectedIds: taskId ? [taskId] : [], persisted,
+        issues: [{ code: error instanceof GanttCommandError ? error.code : saving ? 'PERSIST_FAILED' : 'VALIDATION_FAILED', params: error instanceof GanttCommandError ? error.params : undefined }] };
+    }
     finally {
       draft.busy = false;
       this.host.update();
+      if (result) this.host.result(result, taskId);
       // Disabled controls lose focus in browsers. Restore it after Lit has updated,
       // unless the user has deliberately moved to another control while waiting.
       void this.host.afterUpdate().then(restoreFocus);
@@ -264,19 +326,21 @@ export class GanttInlineCreation {
   private async search(taskId: string, query: string): Promise<void> {
     const state = this.resource(taskId);
     const context = state.context;
-    if (!context || !this.modes().includes('catalogue')) return;
+    if (!context || context.mode !== 'catalogue' || !this.modes().includes('catalogue')) return;
     const request = ++state.request;
     state.results = [];
+    state.searched = false;
     state.searching = Boolean(query.trim());
     this.host.update();
     if (!query.trim()) return;
     try {
       const search = this.host.options().inlineCreation?.resources?.search;
       const provider = this.host.provider();
-      if (!search && !provider) return;
+      if (!search && !provider) throw new Error(this.host.t('resourceCatalogueUnavailable'));
       const results = search ? await search(query, { ...structuredClone(context), mode: 'catalogue' }) : await provider!.search(query);
       if (state.request !== request) return;
       state.results = results;
+      state.searched = true;
     } catch (error) {
       if (state.request === request) state.error = this.errorMessage(error);
     } finally {
@@ -330,7 +394,7 @@ export class GanttInlineCreation {
       const editableAfterSelection = resource.context?.reference && this.host.options().inlineCreation?.resources?.catalogueEditableFields?.includes(column.key);
       if (['name', 'code'].includes(column.key) && !editableAfterSelection) {
         this.clearReference(task.id);
-        if (!this.host.options().inlineCreation?.resources?.inputTemplate) void this.search(task.id, raw);
+        if (resource.context?.mode === 'catalogue' && !this.host.options().inlineCreation?.resources?.inputTemplate) void this.search(task.id, raw);
       }
     }
     this.host.update();
@@ -343,7 +407,7 @@ export class GanttInlineCreation {
     state.results = [];
     state.searching = false;
     delete state.context.reference;
-    state.context.mode = this.modes().includes('free') ? 'free' : 'catalogue';
+    state.searched = false;
     delete state.value.resourceId;
     if (state.value.metadata) delete state.value.metadata.catalogId;
     this.host.update();
@@ -392,7 +456,7 @@ export class GanttInlineCreation {
         <option value=""></option>${(column.options || []).map(option => html`<option value=${String(option.value)} ?disabled=${option.disabled}>${option.label}</option>`)}
       </select>`;
     }
-    return html`<input aria-label=${label} data-field=${column.key} type=${numeric(column) ? 'number' : column.type === 'date' ? 'date' : 'text'}
+    return html`<input lang=${this.host.options().locale || 'en-US'} aria-label=${label} data-field=${column.key} type=${numeric(column) ? 'number' : column.type === 'date' ? 'date' : 'text'}
       .value=${String(value)} ?disabled=${state.busy} ?required=${required.includes(key)}
       min=${ifDefined('min' in column ? column.min : undefined)} step=${'step' in column ? String(column.step ?? 'any') : column.type === 'integer' ? '1' : 'any'}
       placeholder=${column.key === 'name' ? this.host.t(task ? 'newResource' : 'newTask') : ''}
@@ -418,8 +482,14 @@ export class GanttInlineCreation {
     if (!this.resourceEnabled(task)) return nothing;
     const state = this.resource(task.id);
     return html`<div class="inline-resource" data-inline-row="resource" role="group" aria-label=${this.host.t('newResource')} aria-busy=${String(state.busy)} @keydown=${(event: KeyboardEvent) => this.keydown(event, task.id)}>
+      ${this.modes().length > 1 ? html`<label class="inline-mode">${this.host.t('inlineResourceMode')}
+        <select data-inline-mode aria-label=${this.host.t('inlineResourceMode')} .value=${state.context?.mode || 'catalogue'} ?disabled=${state.busy}
+          @change=${(event: Event) => this.changeMode(task, (event.target as HTMLSelectElement).value as GanttResourceCreationMode)}>
+          ${this.modes().map(mode => html`<option value=${mode}>${this.host.t(mode === 'free' ? 'inlineFreeResource' : 'resourceCatalogue')}</option>`)}
+        </select></label>` : nothing}
       <div class="resources-grid">${columns.map(column => html`<div class="resource-cell">${this.editor(column, task)}</div>`)}<div class="resource-cell"></div></div>
       ${state.searching ? html`<div class="inline-feedback" role="status">${this.host.t('searching')}</div>` : nothing}
+      ${state.searched && !state.searching && !state.results.length ? html`<div class="inline-feedback" role="status">${this.host.t('inlineNoResults')}</div>` : nothing}
       ${state.results.length ? html`<div class="inline-suggestions" role="group" aria-label=${this.host.t('resourceCatalogue')}>${state.results.map(reference => html`<button data-inline-suggestion @click=${(event: Event) => this.selectReference(task.id, reference, (event.currentTarget as HTMLElement).closest<HTMLElement>('[data-inline-row]')!)}>${reference.code ? `${reference.code} — ` : ''}${reference.name}</button>`)}</div>` : nothing}
       ${this.feedback(task.id)}
     </div>`;
@@ -430,6 +500,7 @@ export const inlineCreationStyles = css`
   .inline-task, .inline-resource { background: var(--gantt-row); color: var(--gantt-text); border-top: 1px dashed var(--gantt-control-border); }
   .inline-task { position: absolute; left: 0; width: max(100%, var(--task-columns-width)); z-index: 6; }
   .inline-resource { grid-column: 1 / -1; min-width: 0; }
+  .inline-mode { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 4px 8px; }
   .inline-task input { box-sizing: border-box; width: 100%; min-width: 0; font: inherit; padding: 4px; border: 1px solid var(--gantt-control-border); border-radius: 3px; background: var(--gantt-input-background); color: inherit; }
   [data-inline-row] input:focus-visible, [data-inline-row] select:focus-visible, [data-inline-row] button:focus-visible { outline: 2px solid var(--gantt-focus-ring, #2563eb); outline-offset: 1px; }
   .inline-saving { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

@@ -5,7 +5,7 @@ export default defineConfig({
   root: '.',
   build: {
     lib: {
-      entry: resolve(__dirname, 'src/gantt-chart.ts'),
+      entry: resolve(__dirname, 'src/index.ts'),
       fileName: () => 'gantt-chart.js',
       formats: ['es'],
     },

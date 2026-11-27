@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Commandes et saisie continue — Gantt</title>
+  <style>
+    body { margin: 24px; font: 16px/1.5 system-ui, sans-serif; color: #172b4d; background: #f4f6f8; }
+    h1 { font-size: 24px; margin-block-end: 8px; }
+    p { max-width: 80ch; }
+    gantt-chart { display: block; height: 640px; background: white; }
+    .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-block: 16px; }
+    button, select { font: inherit; padding: 6px 10px; }
+    button:focus-visible, select:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; max-height: 400px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h1>Saisie continue et commandes de l’hôte</h1>
+  <p>Créez des tâches avec Tabulation, Entrée et Échap. Pour une ressource, choisissez le catalogue ou le mode libre. Les changements sont confirmés après la sauvegarde simulée. Le scénario d’assistant fournit des commandes structurées ; la reconnaissance vocale appartient à l’application hôte.</p>
+  <div class="controls">
+    <label>Langue du composant <select id="locale"><option value="fr-FR">Français</option><option value="en-US">English</option><option value="ar">العربية · RTL</option></select></label>
+    <label><input id="failure" type="checkbox"> Échec de la prochaine sauvegarde</label>
+    <label><input id="readonly" type="checkbox"> Lecture seule</label>
+  </div>
+  <div class="controls">
+    <button id="preview">Prévisualiser la prochaine commande</button><button id="commit">Confirmer la prévisualisation</button><button id="cancel">Annuler la prévisualisation</button>
+    <button id="undo">Annuler sur le serveur</button><button id="redo">Rétablir sur le serveur</button>
+  </div>
+  <gantt-chart></gantt-chart>
+  <pre id="result" role="status">Aucune commande exécutée.</pre>
+  <script type="module" src="./structured-commands-demo.ts"></script>
+</body>
+</html>

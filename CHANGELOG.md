@@ -4,6 +4,46 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-11-27
+
+### Added
+
+- `showToolbar: false` to replace the main toolbar with host-owned controls, preserving status/error feedback and all public actions.
+- Public zoom, search/navigation, expand/collapse, selection snapshots, task editor and resource picker controls.
+- `getViewState()` / `view-state-changed` and persisted undo/redo availability for synchronizing external controls.
+- Optional suppression of built-in context menus, cancelable `context-menu-requested` events and `onContextMenuRequested`, including stable task/assignment/dependency IDs, timeline dates and detached-window context.
+- A runnable external toolbar and external keyboard-accessible context menu example, using only public APIs.
+
+### Compatibility
+
+- Built-in toolbar and context menus remain enabled by default. The separate detached-resource heading/dock control remains visible.
+- Existing archives, including 1.8.0, are preserved.
+
+## [1.8.0] - 2026-11-27
+
+### Added
+
+- Opt-in typed structured command API for tasks/phases, independent insertion position and hierarchy, assignments, dependencies, selection and explicit calendar-based scheduling.
+- Separate cancellable local/host previews, asynchronous controlled persistence, canonical commits, revision checks, idempotent receipts, atomic/non-atomic batches and persisted undo/redo hooks.
+- Shared host validation/persistence for manual editors (including detached resources), with confirmed data retained until success.
+- Inline command factories, stable draft correlation IDs, structured creation outcomes and configurable resource draft retention/discard on task selection changes.
+- Public command types/helpers, integration reference and runnable simulated host/assistant example.
+
+### Changed
+
+- When both catalogue and free resource entry are enabled, users now explicitly choose free mode. Empty/failed searches and unselected suggestions never imply free entry.
+- RTL grids retain left-to-right date geometry, aligned scrollbars and direction-aware splitters; detached panels inherit direction.
+- The package runtime now exports the full public entry point as well as TypeScript declarations.
+
+### Fixed
+
+- Multiline and legacy IME Enter events no longer confirm inline drafts; stale catalogue results and empty-search feedback stay distinct.
+- Global read-only checks and shared canonical structural validation protect the opt-in command pipeline.
+
+### Packaging
+
+- Version 1.6.0 was already present and superseded by 1.7.0. This additive release uses 1.8.0 and preserves existing archives. No npm publication was performed.
+
 ## [1.7.0] - 2026-11-27
 
 ### Added

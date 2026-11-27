@@ -434,6 +434,9 @@ export type GanttTimelineContextMenuTemplate = (context: GanttTimelineContextMen
 
 /** Text displayed by the component. Override only the entries your product needs. */
 export interface GanttTranslations {
+  inlineResourceMode: string;
+  inlineFreeResource: string;
+  inlineNoResults: string;
   inlineSaveFailed: string;
   inlineSaving: string;
   inlineRequired: string;
@@ -790,6 +793,8 @@ export interface GanttResourceCreationInputContext {
 export type GanttResourceCreationInputTemplate = (context: GanttResourceCreationInputContext) => unknown;
 
 export interface GanttTaskCreationContext {
+  /** Stable for this draft, including retries. Send to a retry-safe host endpoint. */
+  correlationId?: string;
   selectedTask: GanttTask | null;
   lastTask: GanttTask | null;
   /** Defaults to root. Resolved once when the user starts a draft. */
@@ -799,6 +804,7 @@ export interface GanttTaskCreationContext {
 }
 
 export interface GanttResourceCreationContext {
+  correlationId?: string;
   task: GanttTask;
   mode: GanttResourceCreationMode;
   /** Present only after an explicit catalogue selection. */
@@ -818,14 +824,18 @@ export interface GanttTaskInlineCreationOptions {
   requiredFields?: readonly string[];
   validate?: (draft: GanttTaskCreationDraft, context: GanttTaskCreationContext) => GanttCreationValidation | Promise<GanttCreationValidation>;
   /** Persist once and return the complete server-confirmed task, including its ID. */
-  save: (draft: GanttTaskCreationDraft, context: GanttTaskCreationContext) => GanttTask | Promise<GanttTask>;
+  save?: (draft: GanttTaskCreationDraft, context: GanttTaskCreationContext) => GanttTask | Promise<GanttTask>;
+  /** Alternative to save: uses the same validation/persistence pipeline as external commands. */
+  command?: (draft: GanttTaskCreationDraft, context: GanttTaskCreationContext) => import('./gantt-command-types').GanttCommand;
 }
 
 export interface GanttResourceInlineCreationOptions {
   /** Opt-in. Defaults to false. */
   enabled?: boolean;
-  /** Defaults to ['catalogue']. Without a selected reference, confirmation uses free mode when allowed. */
+  /** Defaults to ['catalogue']. With both modes, free entry requires an explicit choice. */
   modes?: readonly GanttResourceCreationMode[];
+  /** Defaults to retain: keep unsaved drafts per task. Pending saves always keep their original target. */
+  selectionChange?: 'retain' | 'discard';
   /** Replaces editable inputs, e.g. with a host search widget. Disables built-in catalogue search. */
   inputTemplate?: GanttResourceCreationInputTemplate;
   canCreate?: (task: GanttTask) => boolean;
@@ -838,7 +848,8 @@ export interface GanttResourceInlineCreationOptions {
   catalogueEditableFields?: readonly string[];
   validate?: (draft: GanttResourceCreationDraft, context: GanttResourceCreationContext) => GanttCreationValidation | Promise<GanttCreationValidation>;
   /** Returns an assignment, never a catalogue entry. Free entries must not be added to the catalogue. */
-  save: (draft: GanttResourceCreationDraft, context: GanttResourceCreationContext) => GanttResource | Promise<GanttResource>;
+  save?: (draft: GanttResourceCreationDraft, context: GanttResourceCreationContext) => GanttResource | Promise<GanttResource>;
+  command?: (draft: GanttResourceCreationDraft, context: GanttResourceCreationContext) => import('./gantt-command-types').GanttCommand;
 }
 
 export interface GanttInlineCreationOptions {
@@ -852,7 +863,52 @@ export interface GanttInlineCreationOptions {
   resources?: GanttResourceInlineCreationOptions;
 }
 
+export interface GanttSearchState {
+  query: string;
+  taskIds: string[];
+  /** Zero-based active match, or -1. */
+  index: number;
+  activeTaskId: string | null;
+}
+
+export interface GanttViewState {
+  zoom: number;
+  selectedTaskId: string | null;
+  canEditSelectedTask: boolean;
+  readOnly: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
+  canUndoCommand: boolean;
+  canRedoCommand: boolean;
+  resourcesUndocked: boolean;
+  search: GanttSearchState;
+}
+
+/** UI integration context, separate from serializable planning commands. */
+export interface GanttContextMenuRequest {
+  kind: 'task' | 'resources' | 'timeline' | 'dependency';
+  x: number;
+  y: number;
+  taskId?: string;
+  assignmentId?: string;
+  date?: string;
+  dependency?: GanttDependency;
+  source: 'main' | 'detached';
+  /** Render an external popup in this document, including for a detached panel. */
+  ownerDocument: Document;
+}
+
 export interface GanttOptions extends GanttIncrementalUpdateOptions {
+  /** Show the main built-in toolbar. Defaults to true; public actions remain available. */
+  showToolbar?: boolean;
+  /** Enable built-in context menus. Defaults to true; request events still fire when false. */
+  contextMenus?: boolean;
+  /** Return false to replace the built-in popup with a host-owned menu. */
+  onContextMenuRequested?: (context: GanttContextMenuRequest) => void | boolean;
+  /** Global user-edit lock, including command execution and draft rows. */
+  readOnly?: boolean;
+  /** Structured commands are disabled by default. */
+  commands?: import('./gantt-command-types').GanttCommandOptions;
   /** Independent opt-in creation rows. Existing creation entry points are preserved. */
   inlineCreation?: GanttInlineCreationOptions;
   headerWidth?: number;
@@ -977,6 +1033,7 @@ export interface ProjectFileAdapter {
 }
 
 export type GanttChangeReason =
+  | 'command'
   | 'set-data'
   | 'task-created'
   | 'task-updated'

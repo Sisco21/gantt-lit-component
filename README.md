@@ -15,9 +15,75 @@ The component is designed to be embedded in another product: the host applicatio
 - JSON and MSPXML import/export, plus an adapter interface for binary `.mpp` files.
 - Change events, persistence hooks and an API-backed resource catalogue integration point.
 
+## External toolbar and menus (1.9.0)
+
+Hide the built-in toolbar without accessing the shadow DOM:
+
+```ts
+gantt.options = { ...gantt.options, showToolbar: false };
+zoomInButton.onclick = () => gantt.zoomIn();
+zoomOutButton.onclick = () => gantt.zoomOut();
+fitButton.onclick = () => gantt.fitGanttToView();
+searchInput.oninput = () => gantt.searchTasks(searchInput.value);
+editButton.onclick = () => gantt.openTaskEditor(); // selected task
+gantt.addEventListener('view-state-changed', event => {
+  const state = (event as CustomEvent<GanttViewState>).detail;
+  zoomLabel.textContent = `${Math.round(state.zoom * 100)} %`;
+  editButton.disabled = !state.canEditSelectedTask;
+});
+```
+
+The toolbar remains visible by default. Hiding it preserves planning data, selection, draft rows, keyboard shortcuts, context menus and status/error feedback. The detached resource heading and Dock button are separate and remain visible.
+
+| Host action | Public API |
+| --- | --- |
+| Zoom / fit | `getZoom()`, `setZoom(factor)`, `zoomIn()`, `zoomOut()`, `fitTaskToView(id?)`, `fitGanttToView()` |
+| Search / matches | `searchTasks(query)`, `getSearchState()`, `nextSearchResult()`, `previousSearchResult()` |
+| Expand / collapse | `expandAll()`, `collapseAll()`, `toggleTask(id)` |
+| Selection / state | `selectTask(id)`, `getSelectedTaskId()`, `getSelectedTask()` (copy), `getViewState()`, `view-state-changed` |
+| Task editor | `openTaskEditor(id?, 'general' \| 'resources' \| 'links')`, `closeTaskEditor()`; respects locks/read-only and existing external editor hooks |
+| Resource picker | `openResourcePicker(taskId?)`, `closeResourcePicker()`; respects existing host picker integration |
+| Columns | `getColumnSettings()`, `setColumnSettings(settings)`, `resetColumnSettings()` to build an external column menu |
+| Create / edit / links / resources | `executeCommand(...)` and existing task/resource/dependency APIs; see [COMMANDS.md](COMMANDS.md) |
+| Delete | `deleteTask(id)`, preserving host confirmation hooks |
+| Undo / redo | `undo()` / `redo()` and `canUndo` / `canRedo` for local history; `undoCommand()` / `redoCommand()` and `canUndoCommand` / `canRedoCommand` for persisted history |
+| Files / persistence | `importFile(file)`, `exportFile(format)` (Blob), `saveToPersistence()`, `loadFromPersistence()`, `saveToLocalStorage()`, `loadFromLocalStorage()`; the host owns file pickers/download controls |
+| Detached resources | `undockResources()`, `dockResources()`, `resourcesUndocked` |
+
+Zoom factors use `1 = 100%` and respect configured limits. Search highlights matches and selects/scrolls to the active result; it does not filter data. `GanttViewState` includes zoom, selection, editability, read-only, local/persisted history availability, detached state and search query/IDs/index. Subscribe once and initialize controls with `getViewState()`. Availability does not replace server authorization.
+
+To replace right-click menus as well:
+
+```ts
+gantt.options = {
+  ...gantt.options,
+  showToolbar: false,
+  contextMenus: false,
+  onContextMenuRequested: context => {
+    // kind: task | resources | timeline | dependency
+    // taskId, assignmentId, dependency endpoints or ISO date; viewport x/y
+    renderHostMenu(context.ownerDocument, context);
+  },
+};
+```
+
+Alternatively, listen to the cancelable `context-menu-requested` event and call `event.preventDefault()` to suppress just that built-in popup, or return `false` from `onContextMenuRequested`. Menus stay enabled by default. Existing context-menu templates still customize the menus inside the component. Menu elements themselves remain implementation details; external controls use public actions/settings.
+
+`GanttContextMenuRequest` includes `kind`, viewport `x`/`y`, relevant stable IDs, `source: 'main' | 'detached'`, and `ownerDocument` for rendering a host popup in the correct window. Assignment IDs are present when a resource cell/date row was targeted, and absent on blank resource space. Task right-click selects that task before notification. Dependency requests support Shift+F10 / ContextMenu when an external handler is configured or internal menus are disabled. Detached requests are also forwarded once to the owning component and its callback. This is a UI context containing a DOM document, not a serializable planning command.
+
+Run `pnpm build`, then `pnpm dev` and open `/examples/external-toolbar.html` for a working external toolbar and host-owned keyboard-accessible context menus. The example uses public APIs only.
+
+## Structured commands and host-controlled editing
+
+Version **1.8.0** adds an opt-in command API for host applications and assistants. The host resolves language/speech to stable IDs, typed numbers and civil ISO dates. Commands support task/phase creation, explicit ordering and hierarchy, calendar-based dates, assignments, dependencies, selection, separate previews, asynchronous canonical persistence, batches and persisted undo/redo hooks.
+
+See [COMMANDS.md](COMMANDS.md) for the full options, commands, events, stable errors, concurrency guarantees and integration boundaries. Run pnpm build, then pnpm dev and open /examples/structured-commands.html for a simulated host with continuous entry, catalogue search, preview/cancel/confirm, failures, undo/redo and French/English/Arabic RTL settings. The typed assistant examples contain no voice recognition dependency.
+
+Enabling commands also routes existing manual editors through shared validation and the host pipeline (captureManualEdits: false opts out). New inline command factories use the same pipeline. Legacy inline save callbacks remain supported as independent persistence boundaries. Global options.readOnly blocks user edits and command mutations.
+
 ## Optional inline creation rows
 
-`options.inlineCreation` enables draft rows at the bottom of the task and resource grids, including empty grids. Both are **disabled by default**. Rows contain only input fields, without Add/Cancel buttons or a resource-mode selector. Existing toolbar buttons, dialogs, context menus and programmatic creation methods keep their behaviour.
+`options.inlineCreation` enables draft rows at the bottom of the task and resource grids, including empty grids. Both are **disabled by default**. Rows have no Add/Cancel buttons. When both resource modes are enabled, a translated selector requires an explicit choice of free entry. Existing toolbar buttons, dialogs, context menus and programmatic creation methods keep their behaviour.
 
 The draft is UI state: it never enters `getData()`, totals, summaries, task bars, dependencies, history or exports. Only the complete record returned by the host's `save` callback is inserted. A blank row, focus/blur, Tab or Escape never creates a record.
 
@@ -68,14 +134,14 @@ gantt.options = {
 };
 ```
 
-`planningApi` above represents your application's authenticated API client. A complete typed adapter and integration are provided in [examples/inline-creation.ts](examples/inline-creation.ts). Run `pnpm dev` and open `/examples/inline-creation.html` for a runnable example with simulated asynchronous saving, catalogue search, a one-shot error switch and detachable resources.
+`planningApi` above represents your application's authenticated API client. A complete typed adapter and integration are provided in [examples/inline-creation.ts](examples/inline-creation.ts). Run `pnpm build`, then `pnpm dev` and open `/examples/inline-creation.html` for a runnable example with simulated asynchronous saving, catalogue search, a one-shot error switch and detachable resources.
 
 The public contracts are exported from the package:
 
 | Contract / option | Behaviour |
 | --- | --- |
 | `GanttInlineCreationOptions.readOnly` | Hides both draft rows. It only controls inline creation; use the existing task permission rules for other editing actions. |
-| `tasks.enabled` / `resources.enabled` | Separate opt-ins; omitted or `false` preserves existing behaviour. A `save` callback is required for each configured section. |
+| `tasks.enabled` / `resources.enabled` | Separate opt-ins; omitted or `false` preserves existing behaviour. Each enabled section requires either `save` or `command`. |
 | `tasks.canCreate(context)` | Additional add permission. A locked or non-editable parent also prevents inline creation under that parent. |
 | `tasks.getContext(context)` | Resolves `parentId` and `index` when a draft starts. Context includes snapshots of `selectedTask` and `lastTask`. The default is root insertion at the end of the flattened task tree. Keep this resolver pure: permissions also use it before a draft starts. |
 | `GanttTaskCreationContext.index` | Zero-based offset in the flattened tree. The host can map this to its ordering model. `save` returns the authoritative `parentId`; the component uses `index` to insert it among siblings. |
@@ -83,9 +149,11 @@ The public contracts are exported from the package:
 | `requiredFields` | Defaults to `['name']`. These are data paths, including `fields.customer` for task fields or `metadata.category` for resources. The existing column `required` flag still means “always visible”. |
 | `validate(draft, context)` | Synchronous or asynchronous. Return a user-facing error string, throw an `Error`, or return nothing to accept. Native input constraints also apply. |
 | `save(draft, context)` | Synchronous or asynchronous. Return a complete canonical `GanttTask` or `GanttResource`. Throw a user-facing `Error` on failure. Callbacks receive copies; do not also call `addChildTask`, `addResource` or `setData` to insert the same result. |
-| `resources.modes` | `['catalogue']` by default. Use `['free']`, `['catalogue', 'free']` or `[]`. A selected reference implies catalogue mode; otherwise confirmation creates a free assignment if allowed. No mode selector is displayed. |
+| `resources.modes` | `['catalogue']` by default. Use `['free']`, `['catalogue', 'free']` or `[]`. With both modes, catalogue is initially selected and the user must explicitly choose free entry. A failed/empty search never chooses free mode. |
 | `confirmKey` / `cancelKey` | Shared by both grids. Default to `'Enter'` and `'Escape'`. Accept a shortcut (`'Ctrl+Enter'`, `'Alt+Backspace'`), an array of alternatives, or `false`. Modifiers must match exactly. |
 | `resources.inputTemplate(context)` | Replaces editable resource inputs with host-owned controls and disables built-in catalogue search. Supplies `column`, `task`, a draft copy, `value`, `disabled`, `required`, selected `reference`, `onInput(value)`, `selectReference(referenceOrNull)` and `renderDefault()`. |
+| `resources.selectionChange` | `'retain'` (default) keeps a draft per task; `'discard'` resets unsaved drafts on selection changes. Pending saves always keep their original target. |
+| `tasks.command` / `resources.command` | Alternative to `save`: build a typed command, using `context.correlationId` for retry-safe correlation. Requires `commands.enabled`. See [COMMANDS.md](COMMANDS.md). |
 | `resources.canCreate(task)` | Additional permission for the selected task. Existing `task.editable` and `isTaskEditable` rules apply. No resource row appears without a selected task. |
 | `resources.search(query, context)` | Searches by name or code; falls back to the existing `resourceProvider.search(query)` when omitted. Suggestions expose optional `GanttResourceReference.code`. Late results from older queries or cancelled drafts are ignored. |
 | `resources.catalogueEditableFields` | Additional allowlist for edits after catalogue selection; columns must also be editable. Omit to allow all editable columns. Name/code inputs search the catalogue; explicitly allowlisting them also permits editing their selected value without changing catalogue identity. |
@@ -95,7 +163,7 @@ Editors follow visible column order and `column.editable`. Configure editable ta
 
 Tab and Shift+Tab move through controls. The confirmation key validates and saves the row; on success a fresh row is immediately available. The cancellation key resets the draft and suggestions. Enter on a built-in catalogue suggestion selects it, and native select editors retain their Enter behaviour. A host search control can call `event.preventDefault()` to consume a key while choosing a suggestion or closing its own popup. While validation or saving is pending, controls are disabled and further submission attempts are ignored. After success, focus returns to the first editor if the user has not moved elsewhere. After an error, the message and draft remain available for correction. Drafts are kept per task across selection changes, and shared between embedded and detached panels.
 
-Catalogue selection copies the reference data and preserves `resourceId`. Without a selected reference, confirming a valid non-empty row creates a free resource when `modes` permits it, even if suggestions were available. Searching or leaving the field never saves by itself. In catalogue-only mode, confirmation requires a selected reference. For free assignments, `resourceId` and the compatibility `metadata.catalogId` are removed from the outgoing draft; the host must persist an assignment without creating a catalogue entry. Return any server-calculated `quantityByDate`, prices and custom metadata in the canonical assignment: those values are preserved when it is inserted.
+Catalogue selection copies the reference data and preserves `resourceId`. In catalogue mode, confirmation requires a selected reference. Choose free mode explicitly to create a valid non-empty free assignment. With only `['free']` configured, entry is directly in free mode. Searching or leaving the field never saves by itself. In catalogue-only mode, confirmation requires a selected reference. For free assignments, `resourceId` and the compatibility `metadata.catalogId` are removed from the outgoing draft; the host must persist an assignment without creating a catalogue entry. Return any server-calculated `quantityByDate`, prices and custom metadata in the canonical assignment: those values are preserved when it is inserted.
 
 To plug in your own resource search input, use a Lit template (or DOM content) with the following bindings. `host-resource-search` below stands for the host application's existing widget; it emits `query-changed` with a string and `resource-selected` with a `GanttResourceReference` or `null`:
 
@@ -148,15 +216,15 @@ Use it in HTML or create it from TypeScript:
 const gantt = document.querySelector('gantt-chart') as GanttChart;
 
 // Useful in diagnostics, telemetry and support tickets.
-console.info(GanttChart.version); // "1.7.0"
-console.info(gantt.version); // "1.7.0"
+console.info(GanttChart.version); // "1.9.0"
+console.info(gantt.version); // "1.9.0"
 ```
 
 Dates use `YYYY-MM-DD` strings deliberately. This prevents timezone changes between the browser and backend from shifting tasks by one day.
 
 ## Build and distribute the package
 
-`pnpm build` creates the distributable `dist/` directory: the ESM component, its stylesheet, source maps and TypeScript declaration files. The package manifest includes only `dist/`, this README and the changelog.
+`pnpm build` creates the distributable `dist/` directory: the ESM component, its stylesheet, source maps and TypeScript declaration files. The package manifest includes `dist/`, this README, the changelog, the command reference and examples.
 
 Before publishing, inspect the exact package contents locally:
 
@@ -166,10 +234,10 @@ npm pack --dry-run
 npm pack
 ```
 
-The final command produces an archive such as `gantt-lit-component-1.7.0.tgz`. A consuming application can test that archive before any publication:
+The final command produces an archive such as `gantt-lit-component-1.9.0.tgz`. A consuming application can test that archive before any publication:
 
 ```bash
-pnpm add ../path/to/gantt-lit-component-1.7.0.tgz
+pnpm add ../path/to/gantt-lit-component-1.9.0.tgz
 ```
 
 ### Publish to npm
@@ -205,7 +273,7 @@ For an unpublished package, add the repository reference to the consuming applic
 }
 ```
 
-Then run `pnpm install`. The package `prepare` script builds the distributable files during Git-based installation. Use a version tag rather than `main` for reproducible releases, for example `github:Sisco21/gantt-lit-component#v1.7.0`.
+Then run `pnpm install`. The package `prepare` script builds the distributable files during Git-based installation. Use a version tag rather than `main` for reproducible releases, for example `github:Sisco21/gantt-lit-component#v1.9.0`.
 
 ## Load data
 

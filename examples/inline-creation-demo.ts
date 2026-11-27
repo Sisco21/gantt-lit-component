@@ -1,6 +1,6 @@
-import '../src/gantt-chart';
-import type { GanttChart } from '../src/gantt-chart';
-import type { GanttTask } from '../src/types';
+import 'gantt-lit-component';
+import 'gantt-lit-component/style.css';
+import type { GanttChart, GanttTask } from 'gantt-lit-component';
 import { configureInlineCreation } from './inline-creation';
 
 const gantt = document.querySelector<GanttChart>('gantt-chart')!;

@@ -15,6 +15,9 @@ import {
   GanttDependency,
   GanttDependencyContextMenuTemplate,
   GanttOptions,
+  GanttSearchState,
+  GanttViewState,
+  GanttContextMenuRequest,
   GanttPersistenceAdapter,
   GanttResource,
   GanttResourceAssignment,
@@ -66,6 +69,8 @@ import {
 } from './gantt-layout';
 import { GanttHistory } from './gantt-history';
 import { GanttInlineCreation, inlineCreationStyles } from './gantt-inline-creation';
+import { GanttCommands, GanttCommandError, validateCommandData } from './gantt-commands';
+import type { GanttCommand, GanttCommandResult } from './gantt-command-types';
 import {
   GanttCalendarDayState,
   GanttDateFormatterCache,
@@ -95,7 +100,7 @@ const ROW_HEIGHT = 42;
 const HEADER_HEIGHT = 58;
 
 /** Public component version. Keep this aligned with package.json. */
-export const GANTT_COMPONENT_VERSION = '1.7.0';
+export const GANTT_COMPONENT_VERSION = '1.9.0';
 
 type DefaultTaskColumn = Omit<GanttColumn, 'label'> & { labelKey: keyof GanttTranslations };
 type DefaultResourceColumn = Omit<GanttResourceColumn, 'label'> & { labelKey: keyof GanttTranslations };
@@ -630,6 +635,11 @@ export class GanttChart extends LitElement {
     .resource-column-resizer { position: absolute; top: 0; right: -3px; z-index: 3; width: 6px; height: 100%; cursor: col-resize; touch-action: none; }
     .resource-column-resizer:hover, .resource-column-resizer:focus-visible { background: rgb(52 120 212 / 22%); outline: 0; }
     .resource-grid-splitter { position: absolute; top: 0; bottom: 0; left: calc(var(--header-width) - 3px); z-index: 35; width: 6px; cursor: col-resize; touch-action: none; }
+    /* Text/grid order follows the host direction; date geometry always advances to the right. */
+    .timeline-pane, .timeline-header, .resource-timeline, .resource-day-header,
+    .gantt-horizontal-scroll:last-child, .resource-horizontal-scroll:last-child { direction: ltr; }
+    :host(:dir(rtl)) .column-resizer, :host(:dir(rtl)) .resource-grid-splitter { left: auto; right: calc(var(--header-width) - 3px); }
+    :host(:dir(rtl)) .task-column-resizer, :host(:dir(rtl)) .resource-column-resizer { right: auto; left: -3px; }
     .resource-cell.resource-action { display: flex; align-items: center; justify-content: center; padding-inline: 4px; }
     .resources-scrollbar-dock { grid-column: 1 / -1; grid-row: 3; display: grid; grid-template-columns: var(--header-width) minmax(var(--min-timeline-width, 160px), 1fr); min-width: 0; height: 18px; border-top: 1px solid var(--gantt-border); background: var(--gantt-header); }
     .resource-horizontal-scroll { min-width: 0; overflow-x: auto; overflow-y: hidden; }
@@ -680,6 +690,8 @@ export class GanttChart extends LitElement {
   set options(value: GanttOptions) {
     const historyWasEnabled = this.isHistoryEnabled();
     this._options = value || {};
+    if (this._options.showToolbar === false) this.columnMenuOpen = false;
+    if (this._options.contextMenus === false) this.closeOpenContextMenus();
     this.numberFormatter = undefined;
     this.calendarDateStates.clear();
     if (!this.isHistoryEnabled()) this.clearHistory();
@@ -699,6 +711,10 @@ export class GanttChart extends LitElement {
   private projectMetadata?: Record<string, unknown>;
   private selectedTaskId: string | null = null;
   private inlineCreation = new GanttInlineCreation({
+    execute: command => this.executeCommand(command),
+    result: (result, taskId) => this.dispatch('inline-creation-result', { kind: taskId ? 'resource' : 'task', taskId, result }),
+    data: () => this.getData(),
+    revision: () => this.revision,
     options: () => this.options,
     provider: () => this.resourceProvider,
     taskContext: () => {
@@ -712,7 +728,8 @@ export class GanttChart extends LitElement {
       if (task.parentId && !this.findTask(task.parentId)) throw new Error(`Parent task no longer exists: ${task.parentId}`);
       const tasks = this.getFlatTasks();
       tasks.splice(Math.max(0, Math.min(tasks.length, context.index)), 0, task);
-      this.replaceFlatTasks(tasks, 'task-created', task.id);
+      validateCommandData({ ...this.getData(), tasks });
+      this.insertLegacyInline(() => this.replaceFlatTasks(tasks, 'task-created', task.id));
       if (task.parentId) this.expandAncestors(task.id);
     },
     insertResource: (taskId, resource) => {
@@ -722,7 +739,8 @@ export class GanttChart extends LitElement {
       const existing = resources.findIndex(item => item.id === resource.id);
       if (existing >= 0) resources[existing] = resource;
       else resources.push(resource);
-      this.replaceFlatTasks(this.getFlatTasks().map(item => item.id === taskId ? { ...item, resources } : item), 'task-updated', taskId, { updateReason: 'resource-added', assignmentIds: [resource.id] });
+      validateCommandData({ ...this.getData(), tasks: this.getFlatTasks().map(item => item.id === taskId ? { ...item, resources } : item) });
+      this.insertLegacyInline(() => this.replaceFlatTasks(this.getFlatTasks().map(item => item.id === taskId ? { ...item, resources } : item), 'task-updated', taskId, { updateReason: 'resource-added', assignmentIds: [resource.id] }));
     },
     update: () => { this.requestUpdate(); this.detachedResourceChart?.requestUpdate(); },
     afterUpdate: () => Promise.all([this.updateComplete, this.detachedResourceChart?.updateComplete]),
@@ -732,6 +750,41 @@ export class GanttChart extends LitElement {
   private historyRestoring = false;
   private zoom = 1;
   private revision = 0;
+  private applyingCommand = false;
+  private commandBaseline?: GanttData;
+  private manualCommandOwner?: GanttChart;
+  private commands = new GanttCommands({
+    options: () => this.options,
+    data: () => this.getData(),
+    revision: () => this.revision,
+    apply: (data, affectedIds) => {
+      this.applyingCommand = true;
+      try {
+        const before = this.getData();
+        data = { ...data, tasks: data.tasks.map(task => ({ ...task, collapsed: before.tasks.find(previous => previous.id === task.id)?.collapsed ?? task.collapsed })) };
+        this.applyData(data, 'command', false, { applyInitialDependencySchedule: false, resetHistory: false, emitSummary: false });
+        if (this.selectedTaskId && !this.findTask(this.selectedTaskId)) this.selectedTaskId = null;
+        this.commit('command');
+        affectedIds.forEach(taskId => {
+          this.dispatch('task-updated', { taskId, reason: 'full-refresh', revision: this.revision });
+          const previous = before.tasks.find(task => task.id === taskId)?.resources || [];
+          const next = this.findTask(taskId)?.resources || [];
+          const ids = new Set([...previous, ...next].map(resource => resource.id));
+          ids.forEach(assignmentId => {
+            if (JSON.stringify(previous.find(resource => resource.id === assignmentId)) !== JSON.stringify(next.find(resource => resource.id === assignmentId))) {
+              this.dispatch('resource-assignment-updated', { taskId, assignmentId, revision: this.revision });
+            }
+          });
+        });
+      } finally { this.applyingCommand = false; }
+    },
+    select: (taskId, reveal) => {
+      if (reveal) this.expandAncestors(taskId);
+      this.selectTask(taskId);
+      if (reveal) void this.updateComplete.then(() => this.scrollTaskIntoView(taskId));
+    },
+    emit: (name, result) => this.dispatch(name, result),
+  });
   private statusMessage = '';
   private statusKind: 'info' | 'success' | 'error' = 'info';
   private resourceContextMenu?: { taskId: string; x: number; y: number };
@@ -766,6 +819,7 @@ export class GanttChart extends LitElement {
   private columnMenuOpen = false;
   private searchQuery = '';
   private searchResultIndex = -1;
+  private lastViewState = '';
   private ganttPanelHeight = 440;
   private resourcePanelHeight = 260;
   private splitUserResized = false;
@@ -878,6 +932,12 @@ export class GanttChart extends LitElement {
     if (this.taskContextMenu && this.taskContextSubmenuOpen) {
       this.renderRoot.querySelector<HTMLElement>('.gantt-context-submenu')?.classList.add('open');
     }
+    const viewState = this.getViewState();
+    const viewKey = JSON.stringify(viewState);
+    if (viewKey !== this.lastViewState) {
+      this.lastViewState = viewKey;
+      this.dispatch('view-state-changed', viewState);
+    }
   }
 
   render() {
@@ -906,21 +966,21 @@ export class GanttChart extends LitElement {
 
     return html`
       <div class="shell" @click=${this.closeOpenContextMenus} @contextmenu=${this.preventNativeContextMenu} style="--header-width:${this.getHeaderWidth(taskGridSizing)}px; --min-timeline-width:${taskGridSizing.minTimelineWidth}px; --task-columns-width:${taskColumnsWidth}px; --timeline-width:${timelineWidth}px; --day-width:${dayWidth}px; --task-row-height:${taskRowHeight}px; --task-bar-height:clamp(18px, calc(${taskRowHeight}px - 18px), 78px); --task-milestone-size:clamp(13px, calc(${taskRowHeight}px - 25px), 36px); --rows-height:${rowsHeight}px; --timeline-header-height:${this.getTimelineHeaderHeight()}px; --dependency-color:${dependencyColor}; --dependency-line-style:${this.options.dependencyLineStyle || 'solid'}; --gantt-panel-height:${this.getGanttPanelHeight()}; --resources-panel-height:${this.getResourcesPanelHeight()}">
-        <div class="toolbar">
-          <button class="primary" @click=${() => this.chooseImport('.json,.xml,.mpp')}>${this.t('import')}</button>
+        ${this.options.showToolbar !== false ? html`<div class="toolbar">
+          <button class="primary" ?disabled=${this.options.readOnly === true} @click=${() => this.chooseImport('.json,.xml,.mpp')}>${this.t('import')}</button>
           <button @click=${() => this.download('json')}>${this.t('exportJson')}</button>
           <button @click=${() => this.download('mspxml')}>${this.t('exportMspxml')}</button>
           <button @click=${() => this.download('mpp')} ?disabled=${!this.projectFileAdapter} title=${this.projectFileAdapter ? this.t('exportMpp') : this.t('exportMppUnavailable')}>${this.t('exportMpp')}</button>
           <span class="toolbar-separator"></span>
           <button @click=${this.saveLocal}>💾 ${this.t('saveLocal')}</button>
-          <button @click=${this.loadLocal}>↶ ${this.t('loadLocal')}</button>
+          <button ?disabled=${this.options.readOnly === true} @click=${this.loadLocal}>↶ ${this.t('loadLocal')}</button>
           ${this.shouldShowHistoryControls() ? html`
             <button @click=${this.undo} ?disabled=${!this.canUndo}>${this.t('undo')}</button>
             <button @click=${this.redo} ?disabled=${!this.canRedo}>${this.t('redo')}</button>
           ` : nothing}
           <span class="toolbar-separator"></span>
-          <button @click=${() => this.addChildTask('')}>＋ ${this.t('addTask')}</button>
-          <button class="danger" @click=${this.deleteSelected} ?disabled=${!this.selectedTaskId || !this.isTaskDeletionEnabled() || this.taskDeletionRequests.has(this.selectedTaskId || '')}>${this.t('delete')}</button>
+          <button @click=${() => this.addChildTask('')} ?disabled=${this.options.readOnly === true}>＋ ${this.t('addTask')}</button>
+          <button class="danger" @click=${this.deleteSelected} ?disabled=${this.options.readOnly === true || !this.selectedTaskId || !this.isTaskDeletionEnabled() || this.taskDeletionRequests.has(this.selectedTaskId || '')}>${this.t('delete')}</button>
           ${this.options.resourcePanel?.detachable ? html`<button @click=${this.resourcesUndocked ? this.dockResources : this.undockResources} ?disabled=${!this.selectedTaskId}>${this.resourcesUndocked ? this.t('dockResources') : this.t('undockResources')}</button>` : nothing}
           <button @click=${this.expandAllParents}>${this.t('expandAll')}</button>
           <button @click=${this.collapseAllParents}>${this.t('collapseAll')}</button>
@@ -942,7 +1002,7 @@ export class GanttChart extends LitElement {
             <button aria-label=${this.t('zoomIn')} @click=${() => this.changeZoom(.1)}>＋</button>
           </span>
             ${this.statusMessage ? html`<span class="status ${this.statusKind}">${this.statusMessage}</span>` : nothing}
-          </div>
+          </div>` : this.statusMessage ? html`<div class="status ${this.statusKind}" role=${this.statusKind === 'error' ? 'alert' : 'status'}>${this.statusMessage}</div>` : nothing}
         <div class="split-viewport ${this.resourcesUndocked ? 'resources-undocked' : ''}" @wheel=${this.handleWheel}>
           <div class="gantt-panel">
             <div class="gantt-viewport" @scroll=${this.handleGanttViewportScroll}>
@@ -991,6 +1051,17 @@ export class GanttChart extends LitElement {
   setData(data: GanttData): void {
     this.applyData(data, 'set-data', true);
   }
+
+  /** Component revision for optimistic concurrency (server revisions stay host-owned). */
+  get commandRevision(): number { return this.manualCommandOwner?.commandRevision ?? this.revision; }
+  validateCommand(command: GanttCommand): Promise<GanttCommandResult> { return this.commands.validate(command); }
+  previewCommand(command: GanttCommand): Promise<GanttCommandResult> { return this.commands.previewCommand(command); }
+  executeCommand(command: GanttCommand): Promise<GanttCommandResult> { return this.commands.execute(command); }
+  getCommandPreview(): GanttCommandResult | undefined { return this.commands.getPreview(); }
+  cancelCommandPreview(): void { this.commands.cancelPreview(); }
+  commitCommandPreview(): Promise<GanttCommandResult> { return this.commands.commitPreview(); }
+  undoCommand(id: string, expectedRevision?: number): Promise<GanttCommandResult> { return this.commands.history('undo', id, expectedRevision); }
+  redoCommand(id: string, expectedRevision?: number): Promise<GanttCommandResult> { return this.commands.history('redo', id, expectedRevision); }
 
   /** Updates one calendar's visual definition without recalculating planning data. */
   updateCalendar(calendar: GanttCalendar): void {
@@ -1051,11 +1122,51 @@ export class GanttChart extends LitElement {
   };
 
   /** Discards previous and future actions while keeping the current project as the new baseline. */
-  clearHistory = (): void => { this.resetHistory(); };
+  clearHistory = (): void => { this.resetHistory(); this.requestUpdate(); };
 
   /** Applies view and integration options and immediately refreshes the component. */
   setOptions(options: GanttOptions): void {
     this.options = options;
+  }
+
+  /** Presentation controls for a host-owned toolbar. Zoom 1 means 100%. */
+  getZoom(): number { return this.zoom; }
+  setZoom(value: number): number {
+    if (Number.isFinite(value)) this.changeZoom(value - this.zoom);
+    return this.zoom;
+  }
+  zoomIn(): number { this.changeZoom(.1); return this.zoom; }
+  zoomOut(): number { this.changeZoom(-.1); return this.zoom; }
+  expandAll(): void { this.setAllParentsCollapsed(false); }
+  collapseAll(): void { this.setAllParentsCollapsed(true); }
+  getSelectedTaskId(): string | null { return this.selectedTaskId; }
+  getSelectedTask(): GanttTask | null {
+    const task = this.findTask(this.selectedTaskId);
+    return task ? structuredClone(task) : null;
+  }
+  get canUndoCommand(): boolean { return this.options.commands?.enabled === true && Boolean(this.options.commands.history) && !this.options.readOnly && this.commands.canUndo; }
+  get canRedoCommand(): boolean { return this.options.commands?.enabled === true && Boolean(this.options.commands.history) && !this.options.readOnly && this.commands.canRedo; }
+  getSearchState(): GanttSearchState {
+    const taskIds = this.getSearchResultIds();
+    const index = Math.min(this.searchResultIndex, taskIds.length - 1);
+    return { query: this.searchQuery, taskIds, index, activeTaskId: taskIds[index] || null };
+  }
+  searchTasks(query: string): GanttSearchState {
+    this.searchQuery = query;
+    this.searchResultIndex = -1;
+    if (query.trim()) this.focusSearchResult(1);
+    else this.requestUpdate();
+    return this.getSearchState();
+  }
+  nextSearchResult(): GanttSearchState { this.focusSearchResult(1); return this.getSearchState(); }
+  previousSearchResult(): GanttSearchState { this.focusSearchResult(-1); return this.getSearchState(); }
+  getViewState(): GanttViewState {
+    return {
+      zoom: this.zoom, selectedTaskId: this.selectedTaskId,
+      canEditSelectedTask: this.isTaskEditable(this.findTask(this.selectedTaskId)), readOnly: this.options.readOnly === true,
+      canUndo: this.canUndo, canRedo: this.canRedo, canUndoCommand: this.canUndoCommand, canRedoCommand: this.canRedoCommand,
+      resourcesUndocked: this.resourcesUndocked, search: this.getSearchState(),
+    };
   }
 
   /** True while the selected task's resources are displayed in a secondary window. */
@@ -1111,6 +1222,8 @@ export class GanttChart extends LitElement {
     resourceChart.resourcePanelOnly = true;
     // One draft and one pending request across both surfaces; commits target the owner.
     resourceChart.inlineCreation = this.inlineCreation;
+    resourceChart.commands = this.commands;
+    resourceChart.manualCommandOwner = this;
     resourceChart.style.height = '100%';
     resourceChart.projectId = this.projectId;
     resourceChart.autoSave = false;
@@ -1165,6 +1278,8 @@ export class GanttChart extends LitElement {
   private getDetachedResourceOptions(): GanttOptions {
     return {
       ...this.options,
+      // This window displays the owner's canonical plan, already scheduled by its host.
+      autoSchedule: false,
       resourcePanel: undefined,
       history: { ...this.options.history, enabled: false, showControls: false },
       onTaskSelect: undefined,
@@ -1205,6 +1320,7 @@ export class GanttChart extends LitElement {
     resourceChart.theme = this.theme;
     resourceChart.visualStyle = this.visualStyle;
     resourceChart.taskColors = this.taskColors;
+    resourceChart.dir = getComputedStyle(this).direction;
     this.copyGanttCssVariables(resourceChart);
   }
 
@@ -1216,7 +1332,8 @@ export class GanttChart extends LitElement {
     resourceChart.projectId = this.projectId;
     this.syncDetachedResourceAppearance();
     void resourceChart.updateComplete.then(() => {
-      if (this.detachedResourceChart !== resourceChart || !this.selectedTaskId) return;
+      if (this.detachedResourceChart !== resourceChart) return;
+      if (!this.selectedTaskId) { resourceChart.selectedTaskId = null; resourceChart.requestUpdate(); return; }
       resourceChart.selectTask(this.selectedTaskId);
       const scrollLeft = this.renderRoot.querySelector<HTMLElement>('.timeline-scroll')?.scrollLeft || 0;
       this.syncDetachedResourceScroll(scrollLeft);
@@ -1339,6 +1456,7 @@ export class GanttChart extends LitElement {
   selectTask(taskId: string): void {
     const task = this.findTask(taskId);
     if (!task) return;
+    this.inlineCreation.selectionChanged(this.selectedTaskId, taskId);
     this.selectedTaskId = taskId;
     this.dispatch('task-selected', { id: taskId, task });
     this.options.onTaskSelect?.(taskId, task);
@@ -1379,10 +1497,7 @@ export class GanttChart extends LitElement {
   }
 
   private onSearchInput = (event: Event): void => {
-    this.searchQuery = (event.target as HTMLInputElement).value;
-    this.searchResultIndex = -1;
-    if (this.searchQuery.trim()) this.focusSearchResult(1);
-    else this.requestUpdate();
+    this.searchTasks((event.target as HTMLInputElement).value);
   };
 
   private handleSearchKeydown = (event: KeyboardEvent): void => {
@@ -1663,11 +1778,13 @@ export class GanttChart extends LitElement {
   setTaskLocked(taskId: string, locked: boolean): boolean {
     if (!this.findTask(taskId)) return false;
     const updated = this.getFlatTasks().map(task => task.id === taskId ? { ...task, editable: !locked } : task);
-    this.replaceFlatTasks(updated, 'task-updated', taskId);
+    this.insertLegacyInline(() => this.replaceFlatTasks(updated, 'task-updated', taskId));
     return true;
   }
 
   addChildTask(parentId: string, newTask: Partial<GanttTask> = {}): GanttTask {
+    if (this.options.readOnly) throw new GanttCommandError('READ_ONLY');
+    if (parentId && !this.isTaskEditable(this.findTask(parentId))) throw new GanttCommandError('FORBIDDEN', { id: parentId });
     const today = formatDate(new Date());
     const taskId = newTask.id || this.createId();
     const type = newTask.type || 'task';
@@ -1726,11 +1843,12 @@ export class GanttChart extends LitElement {
     const descendantIds = new Set(descendants.map(task => task.id));
     this.dependencies = result.dependencies;
     this.replaceFlatTasks(result.tasks, 'task-deleted', taskId);
-    if (this.selectedTaskId && descendantIds.has(this.selectedTaskId)) this.selectedTaskId = null;
+    if (this.selectedTaskId && descendantIds.has(this.selectedTaskId) && !this.findTask(this.selectedTaskId)) this.selectedTaskId = null;
   }
 
   moveTask(taskId: string, parentId: string | null): void {
     if (!this.isTaskEditable(this.findTask(taskId)) || taskId === parentId || this.isDescendant(parentId, taskId)) return;
+    if (parentId && !this.isTaskEditable(this.findTask(parentId))) return;
     const next = moveTaskParent(this.getFlatTasks(), taskId, parentId);
     this.replaceFlatTasks(next, 'task-moved', taskId);
   }
@@ -1739,6 +1857,8 @@ export class GanttChart extends LitElement {
   reorderTask(taskId: string, targetTaskId: string, position: 'before' | 'after'): void {
     if (!this.isTaskEditable(this.findTask(taskId)) || taskId === targetTaskId || this.isDescendant(targetTaskId, taskId)) return;
     const flatTasks = this.getFlatTasks();
+    const parentId = this.findTask(targetTaskId)?.parentId;
+    if (parentId && !this.isTaskEditable(this.findTask(parentId))) return;
     const reorderedTasks = reorderTaskBranch(flatTasks, taskId, targetTaskId, position);
     if (!reorderedTasks) return;
     this.replaceFlatTasks(reorderedTasks, 'task-moved', taskId);
@@ -1755,12 +1875,15 @@ export class GanttChart extends LitElement {
   addDependency(from: string, to: string, type: GanttDependency['type'] = 'finish-to-start'): void {
     if (!from || !to || from === to || !this.findTask(from) || !this.findTask(to)) return;
     if (this.dependencies.some(dependency => dependency.from === from && dependency.to === to)) return;
+    if (!this.isTaskEditable(this.findTask(from)) || !this.isTaskEditable(this.findTask(to))) return;
+    if (!this.validateManualData({ ...this.getData(), dependencies: [...this.dependencies, { from, to, type }] })) return;
     this.dependencies = [...this.dependencies, { from, to, type }];
     this.requestUpdate();
     this.commit('dependency-updated', to);
   }
 
   removeDependency(from: string, to: string): void {
+    if (!this.isTaskEditable(this.findTask(from)) || !this.isTaskEditable(this.findTask(to))) return;
     const next = this.dependencies.filter(dependency => dependency.from !== from || dependency.to !== to);
     if (next.length === this.dependencies.length) return;
     if (this.options.preserveScroll !== false) this.pendingPreservedScroll ||= this.capturePreservedScroll();
@@ -1862,16 +1985,16 @@ export class GanttChart extends LitElement {
             }</div></div></div>` : nothing}
             <div class="resources-left" @scroll=${this.syncResourceLeftHeaderScroll}>
               <div class="resources-grid">
-            ${resources.map(resource => html`
+            ${resources.map(resource => html`<div class="resource-row" style="display:contents" data-assignment-id="${resource.id}">
               ${resourceColumns.map(column => this.renderResourceCell(task, resource, column))}
               <div class="resource-cell resource-action">${taskEditable ? html`<button class="danger" aria-label="${this.t('delete')} ${resource.name}" @click=${() => this.removeResource(task.id, resource.id)}>×</button>` : nothing}</div>
-            `)}
+            </div>`)}
             ${this.inlineCreation.renderResource(task, resourceColumns)}
           </div>
             </div>
             <div class="resource-timeline" @scroll=${this.syncResourceTimelineHeaderScroll}>
               <div class="resource-timeline-content" style="--day-width:${dayWidth}px">
-          ${resources.map(resource => html`<div class="resource-day-row">
+          ${resources.map(resource => html`<div class="resource-day-row" data-assignment-id="${resource.id}">
             ${this.renderResourceCalendarBands(task, resource, visibleDates, windowOffset, dayWidth)}
             ${this.renderResourceWeekDividers(visibleDates, windowOffset, dayWidth)}
             <div class="resource-day-window" style="left:${windowOffset}px">${visibleDates.map(date => {
@@ -2138,8 +2261,8 @@ export class GanttChart extends LitElement {
       <div class="resource-context-backdrop" @click=${this.closeGanttContextMenu}></div>
       <div class="resource-context-menu gantt-context-menu" role="menu" style="left:${menu.x}px; top:${menu.y}px" @click=${(event: Event) => event.stopPropagation()}>
         ${template ? template({ close: this.closeGanttContextMenu, fitToView: this.fitGanttFromContext, date: menu.date, addTask: () => this.addTimelineItemFromContext('task'), addPhase: () => this.addTimelineItemFromContext('parent') }) : html`
-          <button @click=${() => this.addTimelineItemFromContext('task')}>＋ ${this.t('addTask')}</button>
-          <button @click=${() => this.addTimelineItemFromContext('parent')}>＋ ${this.t('addPhase')}</button>
+          <button ?disabled=${this.options.readOnly === true} @click=${() => this.addTimelineItemFromContext('task')}>＋ ${this.t('addTask')}</button>
+          <button ?disabled=${this.options.readOnly === true} @click=${() => this.addTimelineItemFromContext('parent')}>＋ ${this.t('addPhase')}</button>
           <button @click=${this.fitGanttFromContext}>${this.t('fitGantt')}</button>
         `}
       </div>
@@ -2532,7 +2655,7 @@ export class GanttChart extends LitElement {
     lastVisibleRow = visibleTasks.length,
   ) {
     if (this.options.showDependencies === false || !this.dependencies.length) return nothing;
-    const hasDependencyContextMenu = Boolean(this.options.dependencyContextMenuTemplate);
+    const hasDependencyContextMenu = Boolean(this.options.dependencyContextMenuTemplate || this.options.onContextMenuRequested || this.options.contextMenus === false);
     const rows = new Map(visibleTasks.map((task, index) => [task.id, index]));
     const paths = this.dependencies.flatMap(dependency => {
       const from = taskById.get(dependency.from);
@@ -2599,6 +2722,7 @@ export class GanttChart extends LitElement {
     this.projectName = data.name;
     this.projectMetadata = data.metadata ? { ...data.metadata } : undefined;
     if (options.resetHistory !== false && !this.historyRestoring) this.resetHistory();
+    if (!notify && !this.applyingCommand) this.commandBaseline = structuredClone(this.getData());
     this.requestUpdate();
     if (notify) this.commit(reason);
     else {
@@ -2618,10 +2742,11 @@ export class GanttChart extends LitElement {
   }
 
   private replaceFlatTasks(tasks: GanttTask[], reason: GanttChangeReason, taskId?: string, incremental?: IncrementalCommitOptions): void {
+    if (!this.applyingCommand && (this.options.readOnly || this.options.commands?.enabled && !this.validateManualData({ ...this.getData(), tasks }))) return;
     if (this.options.preserveScroll !== false) {
       this.pendingPreservedScroll ||= this.capturePreservedScroll();
     }
-    if (this.options.incrementalUpdates === false) {
+    if (this.options.incrementalUpdates === false && !(this.options.commands?.enabled && this.options.commands.captureManualEdits !== false)) {
       this.applyData({ ...this.getData(), tasks }, 'set-data', false, {
         applyInitialDependencySchedule: false,
         resetHistory: false,
@@ -2635,7 +2760,22 @@ export class GanttChart extends LitElement {
   }
 
   private commit(reason: GanttChangeReason, taskId?: string, revision?: number, incremental?: IncrementalCommitOptions): void {
+    if (!this.applyingCommand && this.commandBaseline && this.options.commands?.enabled && this.options.commands.captureManualEdits !== false
+      && !['set-data', 'imported', 'history-undo', 'history-redo'].includes(reason)) {
+      const proposed = structuredClone(this.getData());
+      this.tasks = buildTaskTree(structuredClone(this.commandBaseline.tasks).map(task => ({ ...task, collapsed: proposed.tasks.find(current => current.id === task.id)?.collapsed ?? task.collapsed })));
+      this.dependencies = structuredClone(this.commandBaseline.dependencies || []);
+      this.requestUpdate();
+      void this.executeCommand({ id: this.createId(), expectedRevision: this.commandRevision,
+        operation: { type: 'plan.replace', source: 'manual', reason, taskId, data: proposed },
+      }).then(result => {
+        if (result.status === 'committed' && taskId && reason === 'task-created') this.selectTask(taskId);
+        else if (result.status === 'failed') this.setStatus(this.t('saveFailed'), 'error');
+      });
+      return;
+    }
     const change = this.createChange(reason, taskId, revision);
+    this.commandBaseline = structuredClone(change.data);
     this.recordHistory(change.data);
     this.dispatch('tasks-changed', change);
     if (incremental?.updateReason && taskId) {
@@ -2649,7 +2789,7 @@ export class GanttChart extends LitElement {
     this.emitProjectSummary();
     this.options.onTasksChange?.(change.data);
     this.syncDetachedResourceData();
-    if (this.autoSave && (this.persistenceAdapter || this.saveHook)) {
+    if (this.autoSave && !(this.applyingCommand && this.options.commands?.mode === 'controlled') && (this.persistenceAdapter || this.saveHook)) {
       const saves: Promise<void>[] = [];
       if (this.persistenceAdapter) saves.push(this.persistenceAdapter.save(change));
       if (this.saveHook) saves.push(Promise.resolve(this.saveHook(change)));
@@ -2660,7 +2800,23 @@ export class GanttChart extends LitElement {
     }
   }
 
-  private isHistoryEnabled(): boolean { return this._options.history?.enabled === true; }
+  private validateManualData(data: GanttData): boolean {
+    try { validateCommandData(data); return true; }
+    catch (error) {
+      const issue = error instanceof GanttCommandError ? { code: error.code, params: error.params } : { code: 'INVALID_DATA' };
+      this.dispatch('mutation-rejected', issue);
+      this.setStatus(this.t('inlineInvalid'), 'error');
+      return false;
+    }
+  }
+
+  private insertLegacyInline(insert: () => void): void {
+    const previous = this.applyingCommand;
+    this.applyingCommand = true;
+    try { insert(); } finally { this.applyingCommand = previous; }
+  }
+
+  private isHistoryEnabled(): boolean { return !this.options.readOnly && !(this.options.commands?.enabled && this.options.commands.mode === 'controlled') && this._options.history?.enabled === true; }
 
   private getHistoryLimit(): number {
     const value = this._options.history?.maxActions;
@@ -2711,6 +2867,7 @@ export class GanttChart extends LitElement {
   }
 
   private async chooseImport(accept: string): Promise<void> {
+    if (this.options.readOnly) return;
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = accept;
@@ -2747,6 +2904,7 @@ export class GanttChart extends LitElement {
   };
 
   private loadLocal = (): void => {
+    if (this.options.readOnly) return;
     try {
       if (!this.loadFromLocalStorage()) this.setStatus(this.t('noLocalProject'), 'info');
     } catch (error) {
@@ -2758,11 +2916,12 @@ export class GanttChart extends LitElement {
     if (event.button !== 0) return;
     event.preventDefault();
     const startX = event.clientX;
+    const direction = getComputedStyle(this).direction === 'rtl' ? -1 : 1;
     const sizing = this.getTaskGridSizing();
     const startWidth = this.getHeaderWidth(sizing);
     const { minWidth: minimum, maxWidth: maximum } = sizing;
     const move = (moveEvent: PointerEvent): void => {
-      const width = Math.max(minimum, Math.min(maximum, startWidth + moveEvent.clientX - startX));
+      const width = Math.max(minimum, Math.min(maximum, startWidth + direction * (moveEvent.clientX - startX)));
       this.headerWidthOverride = width;
       this.requestUpdate();
     };
@@ -2779,11 +2938,12 @@ export class GanttChart extends LitElement {
     event.preventDefault();
     event.stopPropagation();
     const startX = event.clientX;
+    const direction = getComputedStyle(this).direction === 'rtl' ? -1 : 1;
     const startWidth = this.getColumnWidth(column);
     const minimum = column.key === 'name' ? 120 : 48;
     let changed = false;
     const move = (moveEvent: PointerEvent): void => {
-      this.taskColumnWidthOverrides.set(column.key, Math.max(minimum, Math.min(640, startWidth + moveEvent.clientX - startX)));
+      this.taskColumnWidthOverrides.set(column.key, Math.max(minimum, Math.min(640, startWidth + direction * (moveEvent.clientX - startX))));
       changed = true;
       this.requestUpdate();
     };
@@ -2801,10 +2961,11 @@ export class GanttChart extends LitElement {
     event.preventDefault();
     event.stopPropagation();
     const startX = event.clientX;
+    const direction = getComputedStyle(this).direction === 'rtl' ? -1 : 1;
     const startWidth = this.getResourceColumnWidth(column);
     let changed = false;
     const move = (moveEvent: PointerEvent): void => {
-      this.resourceColumnWidthOverrides.set(column.key, Math.max(56, Math.min(480, startWidth + moveEvent.clientX - startX)));
+      this.resourceColumnWidthOverrides.set(column.key, Math.max(56, Math.min(480, startWidth + direction * (moveEvent.clientX - startX))));
       changed = true;
       this.requestUpdate();
     };
@@ -3202,6 +3363,7 @@ export class GanttChart extends LitElement {
   }
 
   private isDeferredScheduleEdit(): boolean {
+    if (this.options.commands?.enabled && this.options.commands.captureManualEdits !== false) return true;
     if (this.options.recalculateOnMoveEnd === false) return true;
     const configured = this.options.scheduleEditing;
     if (!configured || configured.enabled === false) return false;
@@ -3213,6 +3375,7 @@ export class GanttChart extends LitElement {
   }
 
   private isSchedulePreviewOnly(): boolean {
+    if (this.options.commands?.enabled && this.options.commands.captureManualEdits !== false) return true;
     if (this.options.recalculateOnMoveEnd === false) return true;
     const configured = this.options.scheduleEditing;
     if (!configured || configured.enabled === false) return false;
@@ -3613,7 +3776,7 @@ export class GanttChart extends LitElement {
 
   /** Centralises task-level locks for every built-in editing interaction. */
   private isTaskEditable(task: GanttTask | null): boolean {
-    if (!task) return false;
+    if (!task || this.options.readOnly) return false;
     return task.editable !== false && this.options.isTaskEditable?.(task) !== false;
   }
 
@@ -4093,6 +4256,8 @@ export class GanttChart extends LitElement {
 
   private openResourceContextMenu(taskId: string, event: MouseEvent): void {
     event.preventDefault();
+    const assignmentId = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-assignment-id]')?.dataset.assignmentId;
+    if (!this.requestContextMenu({ kind: 'resources', taskId, assignmentId, x: event.clientX, y: event.clientY })) return;
     if (!this.isTaskEditable(this.findTask(taskId))) return;
     const menuWidth = 220;
     const menuHeight = 48;
@@ -4118,7 +4283,6 @@ export class GanttChart extends LitElement {
   };
 
   private openDependencyContextMenu(dependency: GanttDependency, event: MouseEvent | KeyboardEvent, focusMenu = false): void {
-    if (!this.options.dependencyContextMenuTemplate) return;
     event.preventDefault();
     event.stopPropagation();
     const target = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
@@ -4129,6 +4293,7 @@ export class GanttChart extends LitElement {
       && (pointerEvent.clientX !== 0 || pointerEvent.clientY !== 0);
     const x = hasPointerPosition ? pointerEvent.clientX : (bounds?.left || 0) + (bounds?.width || 0) / 2;
     const y = hasPointerPosition ? pointerEvent.clientY : (bounds?.top || 0) + (bounds?.height || 0) / 2;
+    if (!this.requestContextMenu({ kind: 'dependency', dependency: { ...dependency }, x, y }) || !this.options.dependencyContextMenuTemplate) return;
     const margin = 8;
     this.taskTooltip = undefined;
     this.resourceContextMenu = undefined;
@@ -4182,6 +4347,9 @@ export class GanttChart extends LitElement {
   };
 
   private openGanttContextMenu(event: MouseEvent): void {
+    event.preventDefault();
+    const date = this.getTimelineDateAtClientX(event.clientX);
+    if (!this.requestContextMenu({ kind: 'timeline', date, x: event.clientX, y: event.clientY })) return;
     const margin = 8;
     this.taskTooltip = undefined;
     this.resourceContextMenu = undefined;
@@ -4192,7 +4360,7 @@ export class GanttChart extends LitElement {
     this.ganttContextMenu = {
       x: Math.max(margin, Math.min(event.clientX, window.innerWidth - margin)),
       y: Math.max(margin, Math.min(event.clientY, window.innerHeight - margin)),
-      date: this.getTimelineDateAtClientX(event.clientX),
+      date,
     };
     event.preventDefault();
     this.requestUpdate();
@@ -4212,6 +4380,7 @@ export class GanttChart extends LitElement {
   };
 
   private addTimelineItemFromContext(type: 'task' | 'parent'): void {
+    if (this.options.readOnly) return;
     const start = this.ganttContextMenu?.date || formatDate(new Date());
     this.ganttContextMenu = undefined;
     const task = this.addChildTask('', { type, start, end: this.addDays(start, type === 'parent' ? 14 : 7) });
@@ -4228,6 +4397,10 @@ export class GanttChart extends LitElement {
   }
 
   private openTaskContextMenu(taskId: string, event: MouseEvent): void {
+    if (!this.findTask(taskId)) return;
+    event.preventDefault();
+    this.selectTask(taskId);
+    if (!this.requestContextMenu({ kind: 'task', taskId, x: event.clientX, y: event.clientY })) return;
     const margin = 8;
     this.taskTooltip = undefined;
     this.resourceContextMenu = undefined;
@@ -4241,7 +4414,6 @@ export class GanttChart extends LitElement {
       y: Math.max(margin, Math.min(event.clientY, window.innerHeight - margin)),
     };
     event.preventDefault();
-    this.selectTask(taskId);
     this.requestUpdate();
     void this.updateComplete.then(() => this.positionContextMenuInViewport('.task-context-menu'));
   }
@@ -4325,6 +4497,20 @@ export class GanttChart extends LitElement {
     this.requestUpdate();
   };
 
+  private requestContextMenu(context: Omit<GanttContextMenuRequest, 'source' | 'ownerDocument'>): boolean {
+    this.closeOpenContextMenus();
+    const owner = this.manualCommandOwner || this;
+    if (owner !== this) owner.closeOpenContextMenus();
+    const detail: GanttContextMenuRequest = { ...context, source: this.resourcePanelOnly ? 'detached' : 'main', ownerDocument: this.ownerDocument };
+    const notify = (chart: GanttChart) => chart.dispatchEvent(new CustomEvent<GanttContextMenuRequest>('context-menu-requested', {
+      detail, cancelable: true, bubbles: true, composed: true,
+    }));
+    const localAllowed = notify(this);
+    const ownerAllowed = owner === this || notify(owner);
+    const callbackAllowed = owner.options.onContextMenuRequested?.(detail) !== false;
+    return this.options.contextMenus !== false && localAllowed && ownerAllowed && callbackAllowed;
+  }
+
   private closeDependencyContextMenu = (): void => {
     if (!this.dependencyContextMenu) return;
     this.dependencyContextMenu = undefined;
@@ -4369,7 +4555,7 @@ export class GanttChart extends LitElement {
     if (this.options.focusTaskOnCreate) this.fitTaskToView(created.id);
   }
 
-  private openTaskEditor(taskId: string, tab: 'general' | 'resources' | 'links' = 'general'): void {
+  openTaskEditor(taskId = this.selectedTaskId || '', tab: 'general' | 'resources' | 'links' = 'general'): void {
     const task = this.findTask(taskId);
     if (!task || !this.isTaskEditable(task)) return;
     this.taskContextMenu = undefined;
@@ -4383,12 +4569,12 @@ export class GanttChart extends LitElement {
     this.requestUpdate();
   }
 
-  private closeTaskEditor = (): void => {
+  closeTaskEditor = (): void => {
     this.taskEditorId = undefined;
     this.closeResourcePicker();
   };
 
-  private openResourcePicker(taskId: string): void {
+  openResourcePicker(taskId = this.selectedTaskId || ''): void {
     const task = this.findTask(taskId);
     if (!task || !this.isTaskEditable(task)) return;
     const hostPicker = this.options.resourcePicker;
@@ -4415,7 +4601,7 @@ export class GanttChart extends LitElement {
     void this.loadResourceReferences('');
   }
 
-  private closeResourcePicker = (): void => {
+  closeResourcePicker = (): void => {
     this.resourcePickerTaskId = undefined;
     this.resourceReferenceRequest += 1;
     this.resourceReferenceQuery = '';
