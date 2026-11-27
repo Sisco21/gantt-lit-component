@@ -7,6 +7,13 @@ export interface GanttDateHeaderLabels {
   title: string;
 }
 
+export interface GanttCalendarDayState {
+  dateKey: string;
+  working: boolean;
+  exception?: 'working' | 'non-working';
+  label?: string;
+}
+
 /** Caches locale-aware labels used repeatedly by the timeline headers. */
 export class GanttDateFormatterCache {
   private locale = '';
@@ -98,9 +105,21 @@ export function isNonWorkingBlockStart(date: Date, nonWorkingDays: number[]): bo
   return !isNonWorkingDay(previous, nonWorkingDays);
 }
 
+/** Resolves one date without applying any scheduling or quantity calculation. */
+export function getCalendarDayState(calendar: GanttCalendar | undefined, date: Date, nonWorkingDays: number[]): GanttCalendarDayState {
+  const dateKey = formatDate(date);
+  const exception = calendar?.exceptions?.[dateKey];
+  const weeklyWorking = calendar?.workingDays
+    ? calendar.workingDays.includes(date.getUTCDay())
+    : !isNonWorkingDay(date, nonWorkingDays);
+  return {
+    dateKey,
+    working: exception === 'working' ? true : exception === 'non-working' ? false : weeklyWorking,
+    exception,
+    label: calendar?.exceptionLabels?.[dateKey],
+  };
+}
+
 export function isResourceWorkingDay(resource: GanttResource, calendar: GanttCalendar | undefined, date: Date, nonWorkingDays: number[]): boolean {
-  const exception = calendar?.exceptions?.[formatDate(date)];
-  if (exception === 'working') return true;
-  if (exception === 'non-working') return false;
-  return calendar?.workingDays ? calendar.workingDays.includes(date.getUTCDay()) : !isNonWorkingDay(date, nonWorkingDays);
+  return getCalendarDayState(calendar, date, nonWorkingDays).working;
 }

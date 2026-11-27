@@ -15,6 +15,120 @@ The component is designed to be embedded in another product: the host applicatio
 - JSON and MSPXML import/export, plus an adapter interface for binary `.mpp` files.
 - Change events, persistence hooks and an API-backed resource catalogue integration point.
 
+## Optional inline creation rows
+
+`options.inlineCreation` enables draft rows at the bottom of the task and resource grids, including empty grids. Both are **disabled by default**. Rows contain only input fields, without Add/Cancel buttons or a resource-mode selector. Existing toolbar buttons, dialogs, context menus and programmatic creation methods keep their behaviour.
+
+The draft is UI state: it never enters `getData()`, totals, summaries, task bars, dependencies, history or exports. Only the complete record returned by the host's `save` callback is inserted. A blank row, focus/blur, Tab or Escape never creates a record.
+
+```ts
+import type { GanttChart } from 'gantt-lit-component';
+
+const gantt = document.querySelector('gantt-chart') as GanttChart;
+gantt.autoSave = false; // save callbacks below own persistence
+gantt.options = {
+  ...gantt.options,
+  inlineCreation: {
+    readOnly: false,
+    confirmKey: 'Enter', // e.g. 'Ctrl+Enter', ['Enter', 'F2'], or false
+    cancelKey: 'Escape', // configurable independently; false disables cancellation
+    tasks: {
+      enabled: true,
+      getContext: context => ({
+        parentId: context.selectedTask?.type === 'parent'
+          ? context.selectedTask.id : context.selectedTask?.parentId ?? null,
+        index: context.index,
+      }),
+      defaults: context => ({
+        parentId: context.parentId, start: '2026-11-02', end: '2026-11-03',
+        progress: 0, type: 'task',
+      }),
+      requiredFields: ['name', 'start', 'end'],
+      validate: draft => draft.end! < draft.start!
+        ? 'La fin doit être postérieure ou égale au début.' : undefined,
+      save: (draft, context) => planningApi.createTask({
+        ...draft, parentId: context.parentId, position: context.index,
+      }), // Promise<GanttTask>, including the server-generated ID
+    },
+    resources: {
+      enabled: true,
+      modes: ['catalogue', 'free'],
+      canCreate: task => task.type !== 'parent',
+      search: query => planningApi.searchResources(query),
+      defaults: { type: 'work', unit: 'h', quantity: 1, unitCost: 0 },
+      requiredFields: ['name', 'unit', 'quantity', 'unitCost'],
+      catalogueEditableFields: ['quantity', 'unitCost'],
+      validate: draft => draft.quantity! <= 0 || draft.unitCost! < 0
+        ? 'Vérifiez la quantité et le prix unitaire.' : undefined,
+      save: (draft, context) => planningApi.createAssignment(context.task.id, {
+        ...draft, mode: context.mode, resourceId: context.reference?.id,
+      }), // Promise<GanttResource>, an assignment, including its ID
+    },
+  },
+};
+```
+
+`planningApi` above represents your application's authenticated API client. A complete typed adapter and integration are provided in [examples/inline-creation.ts](examples/inline-creation.ts). Run `pnpm dev` and open `/examples/inline-creation.html` for a runnable example with simulated asynchronous saving, catalogue search, a one-shot error switch and detachable resources.
+
+The public contracts are exported from the package:
+
+| Contract / option | Behaviour |
+| --- | --- |
+| `GanttInlineCreationOptions.readOnly` | Hides both draft rows. It only controls inline creation; use the existing task permission rules for other editing actions. |
+| `tasks.enabled` / `resources.enabled` | Separate opt-ins; omitted or `false` preserves existing behaviour. A `save` callback is required for each configured section. |
+| `tasks.canCreate(context)` | Additional add permission. A locked or non-editable parent also prevents inline creation under that parent. |
+| `tasks.getContext(context)` | Resolves `parentId` and `index` when a draft starts. Context includes snapshots of `selectedTask` and `lastTask`. The default is root insertion at the end of the flattened task tree. Keep this resolver pure: permissions also use it before a draft starts. |
+| `GanttTaskCreationContext.index` | Zero-based offset in the flattened tree. The host can map this to its ordering model. `save` returns the authoritative `parentId`; the component uses `index` to insert it among siblings. |
+| `defaults` | A draft object or synchronous function of the creation context. Task defaults include today's date for start/end, progress 0 and type `task`. Resource defaults include type `work`, quantity 1 and unit cost 0. Host defaults override these values and are copied. |
+| `requiredFields` | Defaults to `['name']`. These are data paths, including `fields.customer` for task fields or `metadata.category` for resources. The existing column `required` flag still means “always visible”. |
+| `validate(draft, context)` | Synchronous or asynchronous. Return a user-facing error string, throw an `Error`, or return nothing to accept. Native input constraints also apply. |
+| `save(draft, context)` | Synchronous or asynchronous. Return a complete canonical `GanttTask` or `GanttResource`. Throw a user-facing `Error` on failure. Callbacks receive copies; do not also call `addChildTask`, `addResource` or `setData` to insert the same result. |
+| `resources.modes` | `['catalogue']` by default. Use `['free']`, `['catalogue', 'free']` or `[]`. A selected reference implies catalogue mode; otherwise confirmation creates a free assignment if allowed. No mode selector is displayed. |
+| `confirmKey` / `cancelKey` | Shared by both grids. Default to `'Enter'` and `'Escape'`. Accept a shortcut (`'Ctrl+Enter'`, `'Alt+Backspace'`), an array of alternatives, or `false`. Modifiers must match exactly. |
+| `resources.inputTemplate(context)` | Replaces editable resource inputs with host-owned controls and disables built-in catalogue search. Supplies `column`, `task`, a draft copy, `value`, `disabled`, `required`, selected `reference`, `onInput(value)`, `selectReference(referenceOrNull)` and `renderDefault()`. |
+| `resources.canCreate(task)` | Additional permission for the selected task. Existing `task.editable` and `isTaskEditable` rules apply. No resource row appears without a selected task. |
+| `resources.search(query, context)` | Searches by name or code; falls back to the existing `resourceProvider.search(query)` when omitted. Suggestions expose optional `GanttResourceReference.code`. Late results from older queries or cancelled drafts are ignored. |
+| `resources.catalogueEditableFields` | Additional allowlist for edits after catalogue selection; columns must also be editable. Omit to allow all editable columns. Name/code inputs search the catalogue; explicitly allowlisting them also permits editing their selected value without changing catalogue identity. |
+| `GanttResourceCreationContext` | Contains the original target `task`, `mode` and selected catalogue `reference`. The task snapshot is refreshed before validation; changing selection never redirects a pending assignment. |
+
+Editors follow visible column order and `column.editable`. Configure editable task dates or additional fields through `taskColumns` as needed. Custom task keys map to `draft.fields`; custom resource keys map to `draft.metadata`. Resource select editors, typed options, numeric constraints, `value` and `setValue` are supported; `setValue` receives a draft snapshot with an empty assignment ID. ID and catalogue identity are not editable draft columns.
+
+Tab and Shift+Tab move through controls. The confirmation key validates and saves the row; on success a fresh row is immediately available. The cancellation key resets the draft and suggestions. Enter on a built-in catalogue suggestion selects it, and native select editors retain their Enter behaviour. A host search control can call `event.preventDefault()` to consume a key while choosing a suggestion or closing its own popup. While validation or saving is pending, controls are disabled and further submission attempts are ignored. After success, focus returns to the first editor if the user has not moved elsewhere. After an error, the message and draft remain available for correction. Drafts are kept per task across selection changes, and shared between embedded and detached panels.
+
+Catalogue selection copies the reference data and preserves `resourceId`. Without a selected reference, confirming a valid non-empty row creates a free resource when `modes` permits it, even if suggestions were available. Searching or leaving the field never saves by itself. In catalogue-only mode, confirmation requires a selected reference. For free assignments, `resourceId` and the compatibility `metadata.catalogId` are removed from the outgoing draft; the host must persist an assignment without creating a catalogue entry. Return any server-calculated `quantityByDate`, prices and custom metadata in the canonical assignment: those values are preserved when it is inserted.
+
+To plug in your own resource search input, use a Lit template (or DOM content) with the following bindings. `host-resource-search` below stands for the host application's existing widget; it emits `query-changed` with a string and `resource-selected` with a `GanttResourceReference` or `null`:
+
+```ts
+import { html } from 'lit';
+
+gantt.options = {
+  ...gantt.options,
+  inlineCreation: {
+    ...gantt.options.inlineCreation,
+    confirmKey: 'Enter',
+    cancelKey: 'Escape',
+    resources: {
+      ...gantt.options.inlineCreation!.resources!,
+      modes: ['catalogue', 'free'],
+      inputTemplate: context => context.column.key === 'name'
+        ? html`<host-resource-search
+            .value=${context.value}
+            .disabled=${context.disabled}
+            .required=${context.required}
+            @query-changed=${(event: CustomEvent<string>) => context.onInput(event.detail)}
+            @resource-selected=${(event: CustomEvent) => context.selectReference(event.detail)}
+          ></host-resource-search>`
+        : context.renderDefault(),
+    },
+  },
+};
+```
+
+The widget owns its search and popup; consume Enter/Escape with `preventDefault()` while handling those internally. `onInput` updates the draft, and a name/code change invalidates the previous reference unless that field is explicitly editable after selection. `selectReference` selects or clears a reference without saving. Bind `disabled` during asynchronous validation/saving and manage the widget's focus when closing its popup. Stale callbacks from a cancelled or completed draft are ignored. The same template works in the detached panel. The example's `configureInlineCreation` also accepts this renderer as its optional fourth argument.
+
+The component checks permissions before saving and after asynchronous validation. The server remains responsible for authorizing the request. Escape does not abort an already submitted save. A successful response is merged into current data even if selection changed while waiting. Confirmed inserts emit the existing `tasks-changed` notification (and assignment update notifications for resources). Existing `autoSave` hooks still observe confirmed changes if enabled; set `autoSave = false` to avoid an additional persistence request when these callbacks own saving. For retry-safe persistence after ambiguous network failures, the host API should use its normal idempotency mechanism.
+
 ## Install and register the component
 
 Install the built package in the host application, then register the custom element once at application startup:
@@ -34,8 +148,8 @@ Use it in HTML or create it from TypeScript:
 const gantt = document.querySelector('gantt-chart') as GanttChart;
 
 // Useful in diagnostics, telemetry and support tickets.
-console.info(GanttChart.version); // "1.1.0"
-console.info(gantt.version); // "1.1.0"
+console.info(GanttChart.version); // "1.7.0"
+console.info(gantt.version); // "1.7.0"
 ```
 
 Dates use `YYYY-MM-DD` strings deliberately. This prevents timezone changes between the browser and backend from shifting tasks by one day.
@@ -52,10 +166,10 @@ npm pack --dry-run
 npm pack
 ```
 
-The final command produces an archive such as `gantt-lit-component-1.1.0.tgz`. A consuming application can test that archive before any publication:
+The final command produces an archive such as `gantt-lit-component-1.7.0.tgz`. A consuming application can test that archive before any publication:
 
 ```bash
-pnpm add ../path/to/gantt-lit-component-1.1.0.tgz
+pnpm add ../path/to/gantt-lit-component-1.7.0.tgz
 ```
 
 ### Publish to npm
@@ -91,7 +205,7 @@ For an unpublished package, add the repository reference to the consuming applic
 }
 ```
 
-Then run `pnpm install`. The package `prepare` script builds the distributable files during Git-based installation. Use a version tag rather than `main` for reproducible releases, for example `github:Sisco21/gantt-lit-component#v1.1.0`.
+Then run `pnpm install`. The package `prepare` script builds the distributable files during Git-based installation. Use a version tag rather than `main` for reproducible releases, for example `github:Sisco21/gantt-lit-component#v1.7.0`.
 
 ## Load data
 
@@ -128,6 +242,74 @@ gantt.setData(data);
 ```
 
 Use `gantt.getData()` when a complete snapshot is needed. Treat the returned data as a snapshot: make a copy before changing it outside the component, then call `setData()` to apply a bulk update.
+
+## Incremental updates (1.4.0)
+
+After the initial load, import or explicit full reload, update only the item returned by the business API. The component rebuilds the affected task branch, recalculates parent phase dates and the planning summary, and keeps selection, the active editor tab and scroll positions.
+
+```ts
+gantt.options = {
+  incrementalUpdates: true,
+  recalculateOnMoveEnd: true,
+  preserveScroll: true,
+};
+
+gantt.data = fullPlanning; // initial load only; a JSON string is also supported for HTML attributes
+
+const savedTask = await planningApi.updateTask(taskId, { startDate, finishDate });
+gantt.updateTask(taskId, {
+  start: savedTask.start,
+  end: savedTask.end,
+  resources: savedTask.resources,
+});
+
+const savedAssignment = await planningApi.updateAssignment(taskId, assignmentId, { quantity, unitCost });
+gantt.updateResourceAssignment(taskId, {
+  assignmentId,
+  quantity: savedAssignment.quantity,
+  unitCost: savedAssignment.unitCost,
+  quantityByDate: savedAssignment.quantityByDate,
+});
+```
+
+The assignment endpoint should return the canonical assignment including its recalculated occurrences (`quantityByDate`). A `void` response does not contain enough information for a reliable incremental update. Use `updateTaskResources(taskId, resources)` when the endpoint returns the complete assignment collection, or `removeResourceAssignment(taskId, assignmentId)` for a deletion.
+
+```ts
+gantt.addEventListener('task-updated', event => {
+  const { taskId, reason, revision } = (event as CustomEvent).detail;
+  audit.log({ taskId, reason, revision });
+});
+
+gantt.addEventListener('resource-assignment-updated', event => {
+  const { taskId, assignmentId, revision } = (event as CustomEvent).detail;
+  invalidateAssignmentCache(taskId, assignmentId, revision);
+});
+```
+
+`UpdateReason` is one of `task-date`, `task-label`, `task-hierarchy`, `resource-added`, `resource-updated`, `resource-removed`, `manual-quantity` or `full-refresh`. `refreshTask(taskId)` is the explicit recalculation entry point when move-end recalculation is disabled.
+
+To avoid recalculating dependencies, resource occurrences and summaries for every drag frame, set `recalculateOnMoveEnd: false`. The bar is previewed while dragging, the direct date is committed on release, and the host can call `refreshTask(taskId)` after its business API has returned the canonical result. Set `incrementalUpdates: false` only for a compatibility integration that still expects the internal full-data reconciliation path.
+
+### Detached resources and preserved view state
+
+The detached resource panel is synchronized automatically after an incremental update. Selection and the active tab are component state, so they are not reset when the host calls the focused APIs:
+
+```ts
+gantt.options = {
+  resourcePanel: { detachable: true },
+  preserveScroll: true,
+};
+
+gantt.selectTask('task-42');
+gantt.undockResources();
+
+// The current horizontal/vertical scroll, selected task and resource window
+// remain in place after the API response is applied.
+gantt.updateTaskResources('task-42', taskFromApi.resources ?? []);
+gantt.updateResourceAssignment('task-42', assignmentFromApi);
+```
+
+The complete host-integration sample is available in [`examples/incremental-updates.ts`](examples/incremental-updates.ts).
 
 ## Catch changes and user actions
 
@@ -564,11 +746,56 @@ gantt.options = {
 };
 ```
 
+### Custom dependency right-click menu
+
+Set `dependencyContextMenuTemplate` to receive the exact dependency represented by the arrow that was right-clicked. The component supplies the menu shell, keeps it inside the viewport, supports Escape/click-away closing and exposes the focused connector to the keyboard context-menu shortcuts (`ContextMenu` and `Shift+F10`). The host owns the application confirmation and server persistence; call `gantt.removeDependency(from, to)` only after the server accepts the deletion.
+
+```ts
+import { html } from 'lit';
+
+gantt.options = {
+  dependencyContextMenuTemplate: ({ gantt, dependency, editable, close, fitToView }) => html`
+    <button
+      role="menuitem"
+      ?disabled=${!editable}
+      @click=${async () => {
+        close();
+        const confirmed = await confirmDependencyInApplication(dependency);
+        if (!confirmed) return;
+        try {
+          await deleteDependencyOnServer({
+            from: dependency.from,
+            to: dependency.to,
+            budgetRevision: getCurrentBudgetRevision(),
+          });
+          // Incremental update: selection, scroll and the rest of the plan stay intact.
+          gantt.removeDependency(dependency.from, dependency.to);
+        } catch (error) {
+          showDependencyError(error);
+          // The connector remains visible because removeDependency was not called.
+        }
+      }}
+    >
+      Supprimer le lien
+    </button>
+    <button role="menuitem" @click=${() => { fitToView(); close(); }}>
+      Ajuster la vue
+    </button>
+  `,
+};
+```
+
+When this option is omitted, dependency arrows do not add a context-menu interaction, preserving the 1.5.0 integration behaviour. A failed or conflicting server request must leave the dependency in the host data and can offer the application's reload action.
+
 Useful public editing methods for an external editor are:
 
 | Method | Purpose |
 | --- | --- |
 | `updateTask(taskId, patch)` | Change task fields, dates, parent or resources. |
+| `updateTaskResources(taskId, resources)` | Replace only one task's assignment collection with the canonical API response. |
+| `updateResourceAssignment(taskId, assignment)` | Apply one assignment response or patch, including recalculated occurrences. |
+| `removeResourceAssignment(taskId, assignmentId)` | Remove one assignment without reloading the planning. |
+| `refreshTask(taskId)` | Recalculate the task, parent phase roll-ups, dependencies and summary. |
 | `lockTask(taskId)` / `unlockTask(taskId)` | Persistently block or restore built-in editing for one task. Both return `false` if the task is unknown. |
 | `setTaskLocked(taskId, locked)` | Set the same lock state when it is known as a boolean. |
 | `addChildTask(parentId, task?)` | Create a child task. |
@@ -581,7 +808,9 @@ Useful public editing methods for an external editor are:
 | `removeDependency(from, to)` | Remove a task relationship. |
 | `fitTaskToView(taskId?)` | Zoom and centre one task in the Gantt timeline. |
 | `fitGanttToView()` | Zoom the complete project timeline to the visible width. |
-| `setData(data)` | Apply a complete host-managed data update. |
+| `setData(data)` | Apply an initial load, import or deliberate complete reload. |
+| `updateCalendar(calendar)` | Update one calendar's visual exceptions without recalculating tasks, costs or dependencies. |
+| `setProjectCalendarId(calendarId)` | Change the calendar used by the planning columns without reinjecting the tasks. |
 
 Every mutation above emits `tasks-changed`, so persistence and application state remain consistent whichever editor is used.
 
@@ -638,6 +867,31 @@ gantt.setOptions({
   ],
 });
 ```
+
+### Deferred schedule editing
+
+Task-bar move and resize calculations remain live by default. To preview only the active bar and calculate dependencies, resources, costs and summaries once on release, configure `scheduleEditing`:
+
+```ts
+gantt.options = {
+  scheduleEditing: {
+    enabled: true,
+    dependencyCalculation: 'on-commit',
+    resourceCalculation: 'on-commit',
+    costCalculation: 'on-commit',
+    summaryCalculation: 'on-commit',
+    commitMode: 'controlled',
+  },
+  onScheduleEditCommit: async request => {
+    const response = await saveScheduleEdit(request);
+    return response.ok
+      ? { status: 'accepted', data: response.data, revision: response.revision }
+      : { status: 'rejected', error: response.error };
+  },
+};
+```
+
+Use `commitMode: 'internal'` to apply the calculated result locally. `onScheduleEditStart`, `onScheduleEditPreview` and `onScheduleEditCancel` receive the original and proposed snapshots. `isScheduleEditing()` and `cancelScheduleEdit()` expose the active session to host controls. `autoSchedule` remains responsible only for initial dependency scheduling.
 
 The user can resize visible columns from their boundaries, open the column picker to hide optional columns, and use the toolbar to expand or collapse all parents.
 
@@ -762,6 +1016,58 @@ gantt.options = {
 ```
 
 For a custom resource column, omit `setValue` to make it read-only. With `editable: true` and no `setValue`, the component stores the typed value in `resource.metadata[column.key]`.
+
+### Native select resource columns
+
+Use `editor: 'select'` when a resource column should use a native HTML `<select>` instead of a text or numeric input. The option labels and values come entirely from the host application, so the component does not translate or calculate domain values.
+
+```ts
+import type {
+  GanttResourceColumn,
+  GanttResourceColumnOption,
+} from 'gantt-lit-component';
+
+const calculationTypeLabels: Record<number, string> = {
+  0: 'Fixed total — smoothed',
+  1: 'Fixed total — punctual',
+  2: 'Duration / workshop',
+  3: 'Periodic — fixed weekday',
+  4: 'Periodic — every X working days',
+  5: 'Stock',
+  6: 'One-off service',
+  7: 'Duration-based subcontracting',
+  8: 'Fixed-price subcontracting',
+  9: 'Milestone with punctual resource',
+};
+
+const calculationTypeOptions: GanttResourceColumnOption[] = Object.entries(calculationTypeLabels)
+  .map(([value, label]) => ({ value: Number(value), label }));
+
+const resourceColumns: GanttResourceColumn[] = [
+  {
+    key: 'assignmentType',
+    label: 'Calculation type',
+    width: 240,
+    editor: 'select',
+    options: calculationTypeOptions,
+    editable: true,
+    value: resource => Number(resource.metadata?.assignmentType ?? 2),
+    format: value => calculationTypeLabels[Number(value)] ?? String(value),
+    setValue: (value, resource) => ({
+      metadata: {
+        ...resource.metadata,
+        assignmentType: Number(value),
+      },
+    }),
+  },
+];
+
+gantt.options = { resourceColumns };
+```
+
+`GanttResourceColumnOption` has a `value`, a displayed `label`, and an optional `disabled` flag. The selected option value is passed as a string to `setValue`; convert it to the domain type required by the host application. The current raw value remains on the resource passed to `setValue`. If the current value is not in `options`, the component keeps it visible as a disabled fallback option. A select column without options is rendered read-only.
+
+For French and English (or any other language), provide translated labels in `options` from the host application. The Gantt component displays those labels as supplied and does not translate enum values itself. `setValue` should update only the resource assignment or its metadata; validation, recalculations, quantities, costs and persistence remain the responsibility of the host application's business layer. The component emits the normal `tasks-changed` event, calls `onTasksChange`, and uses the existing `autoSave`, `saveHook` and persistence-adapter pipeline.
 
 ### User-managed column layout (order, width and visibility)
 
@@ -1002,7 +1308,9 @@ The first-day setting aligns the timeline to complete weeks and draws a subtle d
 
 ### Resource calendars
 
-Calendars belong to `GanttData`, so they are preserved in JSON, local persistence and custom project-file adapters. A resource selects one through `calendarId`. The resource grid then shades its closed days on that specific row, blocks edits on those dates and spreads a total quantity only across working dates.
+Calendars belong to `GanttData`, so they are preserved in JSON, local persistence and custom project-file adapters. The host application resolves inheritance before passing the data: `GanttData.projectCalendarId` is the budget/project calendar, `GanttTask.calendarId` is the effective task/phase calendar, and a resource's existing `calendarId` takes precedence for its row. The resource grid shades its closed days on that specific row, blocks edits on those dates and spreads a total quantity only across working dates.
+
+Calendar exceptions are visual only. `working` can reopen a normal weekend, while `non-working` uses a distinct, theme-aware tint. `exceptionLabels` adds an accessible label to the date title and resource input tooltip. For example, this marks 14 July as **Fête nationale** across the planning columns:
 
 The planning and resource panels share the component's available vertical space. On a compact viewport, the planning panel contracts first so the selected task's resources remain visible. Set `resourcesMaxHeight` when an integration needs a different preferred resource-panel height; the horizontal separator remains user-resizable without allowing the resources to disappear.
 
@@ -1015,21 +1323,36 @@ gantt.setOptions({
 
 ```ts
 gantt.setData({
+  projectCalendarId: 'weekday',
   calendars: [
     { id: 'weekday', name: 'Weekdays', workingDays: [1, 2, 3, 4, 5] },
     {
       id: 'site-six-days',
       name: 'Site, Monday to Saturday',
       workingDays: [1, 2, 3, 4, 5, 6],
-      exceptions: { '2026-12-25': 'non-working' },
+      exceptions: { '2026-07-14': 'non-working' },
+      exceptionLabels: { '2026-07-14': 'Fête nationale' },
     },
   ],
   tasks: [{
-    id: 'survey', name: 'Survey', start: '2026-12-21', end: '2026-12-31',
+    id: 'survey', name: 'Survey', start: '2026-07-13', end: '2026-07-18',
     progress: 0, parentId: null, type: 'task',
     resources: [{ id: 'crew', name: 'Crew', type: 'work', unitCost: 500, quantity: 1, calendarId: 'weekday', maxUnits: 2 }],
-  }],
+}],
 });
+```
+
+Calendar-only refreshes keep selection, zoom and both scroll axes intact and do not require `gantt.data = ...`:
+
+```ts
+gantt.updateCalendar({
+  id: 'weekday',
+  name: 'Weekdays',
+  workingDays: [1, 2, 3, 4, 5],
+  exceptions: { '2026-07-14': 'non-working' },
+  exceptionLabels: { '2026-07-14': 'Fête nationale' },
+});
+gantt.setProjectCalendarId('weekday');
 ```
 
 `hours` is also available on a calendar for future hourly scheduling, but the current Gantt view remains day-based. Automatic dependency scheduling still uses the project calendar; resource calendars currently govern availability and quantity allocation, not resource leveling.
@@ -1045,6 +1368,9 @@ gantt-chart {
   --gantt-row-alt: #f6f8fc;
   --gantt-grid-line: #e5eaf2;
   --gantt-non-working-day: #edf1f7;
+  --gantt-calendar-non-working: #fff0df;
+  --gantt-calendar-working: #eaf7ef;
+  --gantt-calendar-exception-border: #d97706;
   --gantt-task: #167c5d;
   --gantt-parent: #2f69c7;
   --gantt-milestone: #d44d67;

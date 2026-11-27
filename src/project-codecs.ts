@@ -159,11 +159,13 @@ export function normalizeProject(data: GanttData): GanttData {
     name: data.name,
     tasks: flattenTasks(buildTaskTree(data.tasks)),
     dependencies: (data.dependencies || []).map(dependency => ({ ...dependency })),
+    projectCalendarId: data.projectCalendarId,
     calendars: (data.calendars || []).map(calendar => ({
       ...calendar,
       workingDays: calendar.workingDays ? [...calendar.workingDays] : undefined,
       hours: calendar.hours ? { ...calendar.hours } : undefined,
       exceptions: calendar.exceptions ? { ...calendar.exceptions } : undefined,
+      exceptionLabels: calendar.exceptionLabels ? { ...calendar.exceptionLabels } : undefined,
     })),
     metadata: data.metadata ? { ...data.metadata } : undefined,
   };

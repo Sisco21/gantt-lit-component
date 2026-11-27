@@ -30,19 +30,19 @@ pnpm pack
 This produces a file similar to:
 
 ```text
-gantt-lit-component-1.1.0.tgz
+gantt-lit-component-1.7.0.tgz
 ```
 
 Install that archive in the consuming application:
 
 ```bash
-pnpm add "D:\projects\sandBox\GanttComponent\gantt-lit-component-1.1.0.tgz"
+pnpm add "D:\projects\sandBox\GanttComponent\gantt-lit-component-1.7.0.tgz"
 ```
 
 Use a relative path when both projects are checked out together:
 
 ```bash
-pnpm add ../GanttComponent/gantt-lit-component-1.1.0.tgz
+pnpm add ../GanttComponent/gantt-lit-component-1.7.0.tgz
 ```
 
 ## Install from a package registry
@@ -59,7 +59,7 @@ For a private registry, configure the registry and authentication in the consumi
 After publication, install a versioned dependency:
 
 ```bash
-pnpm add @your-company/gantt-lit-component@1.1.0
+pnpm add @your-company/gantt-lit-component@1.7.0
 ```
 
 Always publish a new semantic version for every release. Use a patch version for fixes, a minor version for backward-compatible features, and a major version for breaking API changes.
@@ -160,4 +160,3 @@ The detached window must be opened from a user action when popup blockers are en
 2. Run the consuming application's build and tests.
 3. Check the component changelog for breaking changes and migrations.
 4. Verify import/export, persistence hooks, custom templates, translations and resource-window behavior in a staging environment.
-

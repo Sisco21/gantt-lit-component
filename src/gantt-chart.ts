@@ -13,21 +13,31 @@ import {
   GanttData,
   GanttDateHeaderTemplate,
   GanttDependency,
+  GanttDependencyContextMenuTemplate,
   GanttOptions,
   GanttPersistenceAdapter,
   GanttResource,
+  GanttResourceAssignment,
+  GanttResourceAssignmentPatch,
   GanttResourceColumn,
   GanttResourceColumnRenderContext,
   GanttResourceProvider,
   GanttResourceReference,
   GanttProjectSummary,
   GanttSaveHook,
+  GanttScheduleCommitRequest,
+  GanttScheduleCommitResult,
+  GanttScheduleEditContext,
+  GanttScheduleEditMode,
   GanttTask,
   GanttTaskDeleteContext,
   GanttTaskDeleteSource,
   GanttTaskBarKind,
   GanttTheme,
   GanttTranslations,
+  GanttTaskUpdatedEventDetail,
+  GanttResourceAssignmentUpdatedEventDetail,
+  UpdateReason,
   ProjectFileAdapter,
   ProjectFileFormat,
   TaskColors,
@@ -55,7 +65,9 @@ import {
   clampGanttPanelHeight,
 } from './gantt-layout';
 import { GanttHistory } from './gantt-history';
+import { GanttInlineCreation, inlineCreationStyles } from './gantt-inline-creation';
 import {
+  GanttCalendarDayState,
   GanttDateFormatterCache,
   alignRangeToWeeks as alignCalendarRangeToWeeks,
   getWeekNumber as calculateWeekNumber,
@@ -63,6 +75,7 @@ import {
   isNonWorkingBlockStart as calculateNonWorkingBlockStart,
   isNonWorkingDay as calculateNonWorkingDay,
   isResourceWorkingDay as calculateResourceWorkingDay,
+  getCalendarDayState as calculateCalendarDayState,
   isWeekStart as calculateWeekStart,
   normalizeFirstDayOfWeek,
 } from './gantt-calendar';
@@ -72,7 +85,7 @@ import {
   getResourceTotalQuantity as calculateResourceTotalQuantity,
   roundResourceQuantity,
 } from './gantt-resources';
-import { scheduleInitialDependencies, scheduleTaskDates } from './gantt-scheduling';
+import { scheduleInitialDependencies, scheduleTaskDates, ScheduleCalculationOptions } from './gantt-scheduling';
 import { calculateProjectSummary } from './gantt-summary';
 import { flattenTaskTree, getTaskDepths, getTaskOutlineCodes, getTaskSubtreeIds } from './gantt-task-tree';
 import { calculateTaskCosts } from './gantt-task-costs';
@@ -82,10 +95,14 @@ const ROW_HEIGHT = 42;
 const HEADER_HEIGHT = 58;
 
 /** Public component version. Keep this aligned with package.json. */
-export const GANTT_COMPONENT_VERSION = '1.1.0';
+export const GANTT_COMPONENT_VERSION = '1.7.0';
 
 type DefaultTaskColumn = Omit<GanttColumn, 'label'> & { labelKey: keyof GanttTranslations };
 type DefaultResourceColumn = Omit<GanttResourceColumn, 'label'> & { labelKey: keyof GanttTranslations };
+type GanttTimelineRange = { start: Date; end: Date };
+type PreservedScrollState = Array<{ selector: string; index: number; left: number; top: number }>;
+type IncrementalCommitOptions = { updateReason?: UpdateReason; assignmentIds?: string[] };
+type ZoomAnchor = { contentX: number; viewportOffset: number; dayWidth: number };
 
 const DEFAULT_TASK_COLUMNS: DefaultTaskColumn[] = [
   { key: 'mode', labelKey: 'mode', width: 38 },
@@ -129,6 +146,7 @@ export class GanttChart extends LitElement {
   };
 
   static styles = css`
+    ${inlineCreationStyles}
     :host {
       display: block;
       min-width: 0;
@@ -146,6 +164,9 @@ export class GanttChart extends LitElement {
       --gantt-row: #fff;
       --gantt-row-alt: #fbfcfe;
       --gantt-non-working-day: #f0f3f8;
+      --gantt-calendar-non-working: #fff0df;
+      --gantt-calendar-working: #eaf7ef;
+      --gantt-calendar-exception-border: #d97706;
       --gantt-empty-background: #fff;
       --gantt-empty-color: #64748b;
       --gantt-parent: #3478d4;
@@ -181,6 +202,9 @@ export class GanttChart extends LitElement {
       --gantt-row: #121c2b;
       --gantt-row-alt: #172235;
       --gantt-non-working-day: #202d41;
+      --gantt-calendar-non-working: #4a3324;
+      --gantt-calendar-working: #1f4334;
+      --gantt-calendar-exception-border: #f2b261;
       --gantt-empty-background: #121c2b;
       --gantt-empty-color: #b8c5d8;
       --gantt-parent: #65a5ff;
@@ -397,6 +421,8 @@ export class GanttChart extends LitElement {
     .month { padding: 7px 4px 4px; font-size: 11px; font-weight: 700; text-transform: capitalize; }
     .day { box-sizing: border-box; padding: 7px 1px 0; font-size: 10px; white-space: nowrap; }
     .day.weekend { background: var(--gantt-non-working-day); }
+    .day.calendar-non-working { background: var(--gantt-calendar-non-working); color: var(--gantt-calendar-exception-border); }
+    .day.calendar-working { background: var(--gantt-calendar-working); color: var(--gantt-green); }
     .day.non-working-start { border-left: 2px solid var(--gantt-border); }
     /* The first day of a week uses the same strong delimiter as the week header. */
     .day.week-start { border-left: 2px solid var(--gantt-border); }
@@ -439,6 +465,9 @@ export class GanttChart extends LitElement {
     .task-focus:hover, .task-focus:focus-visible { border-color: var(--gantt-control-border); background: var(--gantt-control-hover); color: var(--gantt-blue); outline: 0; }
     .task-focus svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.7; }
     .timeline-row { width: 100%; overflow: hidden; background-image: repeating-linear-gradient(to right, transparent 0, transparent calc(var(--day-width) - 1px), var(--gantt-grid-line) calc(var(--day-width) - 1px), var(--gantt-grid-line) var(--day-width)); }
+    .task-calendar-band { position: absolute; top: 0; bottom: 0; z-index: 2; border-left: 1px solid color-mix(in srgb, var(--gantt-calendar-exception-border) 36%, transparent); pointer-events: none; }
+    .task-calendar-band.calendar-non-working { background: var(--gantt-calendar-non-working); }
+    .task-calendar-band.calendar-working { background: var(--gantt-calendar-working); }
 
     /* The marker lives inside .timeline-content, below the sticky header. */
     .today-line { position: absolute; top: 0; bottom: 0; z-index: 3; width: 2px; background: var(--today-color, var(--gantt-red)); opacity: .75; pointer-events: none; }
@@ -490,6 +519,8 @@ export class GanttChart extends LitElement {
     .task-tooltip-resources span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     .non-working-day-band { position: absolute; top: 0; bottom: 0; z-index: 2; border-left: 1px solid rgb(148 163 184 / 20%); background: var(--gantt-non-working-day); pointer-events: none; }
+    .non-working-day-band.calendar-non-working { border-left-color: color-mix(in srgb, var(--gantt-calendar-exception-border) 48%, transparent); background: var(--gantt-calendar-non-working); }
+    .non-working-day-band.calendar-working { border-left-color: color-mix(in srgb, var(--gantt-green) 42%, transparent); background: var(--gantt-calendar-working); }
     .non-working-day-band.non-working-start { border-left: 2px solid var(--gantt-border); }
     /* Week boundaries continue through the grid, including after the weekend band. */
     .week-divider { position: absolute; top: 0; bottom: 0; z-index: 3; width: 0; border-left: 2px solid var(--gantt-border); pointer-events: none; }
@@ -501,6 +532,8 @@ export class GanttChart extends LitElement {
     .dependency-dot { width: 7px; height: 7px; border: 2px solid var(--dependency-color, #3b82c4); border-radius: 50%; background: var(--gantt-surface); transform: translate(-3.5px, -3.5px); }
     .dependency-arrow { width: 0; height: 0; border-top: 6px solid transparent; border-bottom: 6px solid transparent; transform: translateY(-5px); }
     .dependency-arrow.right { border-left: 8px solid var(--dependency-color, #3b82c4); }
+    .dependency-hit-target { position: absolute; z-index: 2; width: 12px; height: 20px; margin: 0; padding: 0; border: 0; border-radius: 4px; background: transparent; cursor: context-menu; opacity: 0; }
+    .dependency-hit-target:focus-visible { opacity: .3; outline: 2px solid #60a5fa; outline-offset: 1px; background: color-mix(in srgb, var(--dependency-color, #3b82c4) 32%, transparent); }
     .column-resizer { position: absolute; top: 0; bottom: 0; left: calc(var(--header-width) - 3px); z-index: 35; width: 6px; cursor: col-resize; touch-action: none; }
     .column-resizer::before, .resource-grid-splitter::before { position: absolute; top: 0; bottom: 0; left: 2px; width: 2px; content: ''; background: var(--gantt-control-border); opacity: .72; }
     .column-resizer::after, .resource-grid-splitter::after { position: absolute; top: 50%; left: 1px; width: 4px; height: 46px; border-radius: 2px; background: var(--gantt-control-border); box-shadow: 0 0 0 1px var(--gantt-surface); content: ''; opacity: .88; transform: translateY(-50%); }
@@ -522,6 +555,7 @@ export class GanttChart extends LitElement {
     .resource-context-menu { position: fixed; z-index: 91; min-width: 190px; padding: 5px; border: 1px solid var(--gantt-control-border); border-radius: 6px; background: var(--gantt-surface); box-shadow: 0 8px 24px rgb(15 23 42 / 18%); }
     .resource-context-menu button { width: 100%; border: 0; text-align: left; }
     .task-context-menu { position: fixed; z-index: 91; box-sizing: border-box; width: var(--gantt-context-menu-width, 160px); min-width: 0; max-width: min(320px, calc(100vw - 16px)); padding: 5px; border: 1px solid var(--gantt-control-border); border-radius: 6px; background: var(--gantt-surface); box-shadow: 0 8px 24px rgb(15 23 42 / 18%); overflow: visible; }
+    .dependency-context-menu { width: var(--gantt-context-menu-width, 190px); }
     .task-context-menu > button, .gantt-context-submenu-trigger { width: 100%; min-width: 0; overflow-wrap: anywhere; border: 0; text-align: left; white-space: normal; }
     .gantt-context-submenu { position: relative; }
     .gantt-context-submenu-trigger { display: flex; justify-content: space-between; gap: 16px; }
@@ -572,14 +606,19 @@ export class GanttChart extends LitElement {
     .resource-day { box-sizing: border-box; padding: 8px 1px 0; color: var(--gantt-muted); font-size: 10px; text-align: center; white-space: nowrap; }
     .resource-day.week-date { flex: 0 0 auto; }
     .resource-day.weekend { background: var(--gantt-non-working-day); }
+    .resource-day.calendar-non-working { background: var(--gantt-calendar-non-working); color: var(--gantt-calendar-exception-border); }
+    .resource-day.calendar-working { background: var(--gantt-calendar-working); color: var(--gantt-green); }
     .resource-day.non-working-start { border-left: 2px solid var(--gantt-border); }
     .resource-day.week-start { border-left: 2px solid var(--gantt-border); }
     .resource-day-row { height: 32px; border-bottom: 1px solid var(--gantt-grid-line); }
     .resource-day-row:nth-child(even) { background-color: var(--gantt-row-alt); }
-    .resource-calendar-closed { position: absolute; top: 0; bottom: 0; z-index: 3; border-left: 1px solid rgb(148 163 184 / 20%); background: var(--gantt-non-working-day); pointer-events: none; }
+    .resource-calendar-closed, .resource-calendar-open { position: absolute; top: 0; bottom: 0; z-index: 3; border-left: 1px solid rgb(148 163 184 / 20%); pointer-events: none; }
+    .resource-calendar-closed { background: var(--gantt-non-working-day); }
+    .resource-calendar-closed.calendar-non-working { border-left-color: color-mix(in srgb, var(--gantt-calendar-exception-border) 48%, transparent); background: var(--gantt-calendar-non-working); }
+    .resource-calendar-open { border-left-color: color-mix(in srgb, var(--gantt-green) 42%, transparent); background: var(--gantt-calendar-working); }
     .resource-calendar-closed.non-working-start { border-left: 2px solid var(--gantt-border); }
     .resource-week-divider { position: absolute; top: 0; bottom: 0; z-index: 5; width: 0; border-left: 2px solid var(--gantt-border); pointer-events: none; }
-    .resource-day-input { min-width: 0; padding: 2px 1px; appearance: textfield; border-top: 0; border-bottom: 0; border-left: 0; background: transparent; color: inherit; font: inherit; font-size: 12px; line-height: 24px; text-align: center; }
+    .resource-day-input { position: relative; z-index: 4; min-width: 0; padding: 2px 1px; appearance: textfield; border-top: 0; border-bottom: 0; border-left: 0; background: transparent; color: inherit; font: inherit; font-size: 12px; line-height: 24px; text-align: center; }
     .resource-day-input::-webkit-inner-spin-button, .resource-day-input::-webkit-outer-spin-button { margin: 0; appearance: none; }
     .resource-day-input:disabled:not(.calendar-closed) { background: var(--gantt-header); }
     .resource-day-input.calendar-closed { background: transparent; color: var(--gantt-muted); cursor: not-allowed; opacity: 1; }
@@ -597,7 +636,7 @@ export class GanttChart extends LitElement {
     .resource-horizontal-scroll + .resource-horizontal-scroll { border-left: 1px solid var(--gantt-border); }
     .resource-scroll-spacer { height: 1px; width: 100%; min-width: var(--resource-columns-width); }
     .resource-scroll-spacer.timeline { min-width: var(--timeline-width); }
-    .resource-cell input, .resource-cell select { width: 100%; min-height: 21px; border: 1px solid var(--gantt-control-border); border-radius: 3px; background: var(--gantt-input-background); color: inherit; font: inherit; font-size: 11px; padding: 2px 4px; }
+    .resource-cell input, .resource-cell select { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; min-height: 21px; border: 1px solid var(--gantt-control-border); border-radius: 3px; background: var(--gantt-input-background); color: inherit; font: inherit; font-size: 11px; padding: 2px 4px; }
     /* Native number steppers reserve width even for decimal fields configured with
        step="any". Hide them in the dense resource grid; typing and keyboard arrows
        still honour each column's configured min/step. */
@@ -622,7 +661,8 @@ export class GanttChart extends LitElement {
     }
   `;
 
-  declare data: string;
+  /** Accepts a JSON string for attribute compatibility or a GanttData object for TypeScript hosts. */
+  declare data: string | GanttData;
   declare taskColors: string;
   declare projectId: string;
   declare autoSave: boolean;
@@ -641,6 +681,7 @@ export class GanttChart extends LitElement {
     const historyWasEnabled = this.isHistoryEnabled();
     this._options = value || {};
     this.numberFormatter = undefined;
+    this.calendarDateStates.clear();
     if (!this.isHistoryEnabled()) this.clearHistory();
     else if (!historyWasEnabled) this.resetHistory();
     else this.history.trim(this.getHistoryLimit());
@@ -652,9 +693,41 @@ export class GanttChart extends LitElement {
   private tasks: GanttTask[] = [];
   private dependencies: GanttDependency[] = [];
   private calendars: GanttCalendar[] = [];
+  private projectCalendarId?: string;
+  private readonly calendarDateStates = new Map<string, Map<string, GanttCalendarDayState>>();
   private projectName?: string;
   private projectMetadata?: Record<string, unknown>;
   private selectedTaskId: string | null = null;
+  private inlineCreation = new GanttInlineCreation({
+    options: () => this.options,
+    provider: () => this.resourceProvider,
+    taskContext: () => {
+      const tasks = this.getFlatTasks();
+      return { selectedTask: this.findTask(this.selectedTaskId), lastTask: tasks[tasks.length - 1] || null, parentId: null, index: tasks.length };
+    },
+    findTask: id => this.findTask(id),
+    isEditable: task => this.isTaskEditable(task),
+    insertTask: (task, context) => {
+      if (this.findTask(task.id)) throw new Error(`Task ID already exists: ${task.id}`);
+      if (task.parentId && !this.findTask(task.parentId)) throw new Error(`Parent task no longer exists: ${task.parentId}`);
+      const tasks = this.getFlatTasks();
+      tasks.splice(Math.max(0, Math.min(tasks.length, context.index)), 0, task);
+      this.replaceFlatTasks(tasks, 'task-created', task.id);
+      if (task.parentId) this.expandAncestors(task.id);
+    },
+    insertResource: (taskId, resource) => {
+      const task = this.findTask(taskId);
+      if (!task) throw new Error(this.t('inlineNotAllowed'));
+      const resources = [...(task.resources || [])];
+      const existing = resources.findIndex(item => item.id === resource.id);
+      if (existing >= 0) resources[existing] = resource;
+      else resources.push(resource);
+      this.replaceFlatTasks(this.getFlatTasks().map(item => item.id === taskId ? { ...item, resources } : item), 'task-updated', taskId, { updateReason: 'resource-added', assignmentIds: [resource.id] });
+    },
+    update: () => { this.requestUpdate(); this.detachedResourceChart?.requestUpdate(); },
+    afterUpdate: () => Promise.all([this.updateComplete, this.detachedResourceChart?.updateComplete]),
+    t: key => this.t(key),
+  });
   private readonly history = new GanttHistory<GanttData>(data => structuredClone(data), data => JSON.stringify(data));
   private historyRestoring = false;
   private zoom = 1;
@@ -668,6 +741,8 @@ export class GanttChart extends LitElement {
   private readonly detachedResourceWindowName = `gantt-resources-${this.createId()}`;
   private ganttContextMenu?: { x: number; y: number; date: string };
   private taskContextMenu?: { taskId: string; x: number; y: number };
+  private dependencyContextMenu?: { dependency: GanttDependency; x: number; y: number };
+  private focusDependencyContextMenu = false;
   private taskContextSubmenuOpen = false;
   private taskTooltip?: { taskId: string; color: string; kind: GanttTaskBarKind; x: number; y: number };
   private taskEditorId?: string;
@@ -709,11 +784,25 @@ export class GanttChart extends LitElement {
   private ganttViewportFrame?: number;
   private timelineSynchronizationFrame?: number;
   private pendingTimelineSynchronization?: { scrollLeft: number; source?: HTMLElement };
+  private pendingPreservedScroll?: PreservedScrollState;
   private ganttViewportResizeObserver?: ResizeObserver;
   private resourceTimelineResizeObserver?: ResizeObserver;
+  private scheduleEditSession?: {
+    taskId: string;
+    mode: GanttScheduleEditMode;
+    originalStart: string;
+    originalEnd: string;
+    proposedStart: string;
+    proposedEnd: string;
+    originalData: GanttData;
+    baseTasks: GanttTask[];
+    baseRevision: number;
+    timelineRange: GanttTimelineRange;
+  };
+  private scheduleEditPreview?: { taskId: string; start: string; end: string };
   private barDrag?: {
     taskId: string;
-    mode: 'move' | 'resize-start' | 'resize-end';
+    mode: GanttScheduleEditMode;
     startX: number;
     originalStart: string;
     originalEnd: string;
@@ -726,6 +815,7 @@ export class GanttChart extends LitElement {
     pendingX?: number;
     frame?: number;
     autoScrollFrame?: number;
+    timelineRange: GanttTimelineRange;
   };
   private ganttPan?: {
     pointerId: number;
@@ -743,7 +833,8 @@ export class GanttChart extends LitElement {
 
   disconnectedCallback(): void {
     document.removeEventListener('keydown', this.handleKeyDown);
-    this.finishBarDrag();
+    if (this.isScheduleEditing()) this.cancelScheduleEdit();
+    else this.finishBarDrag();
     this.finishGanttPan();
     if (this.ganttViewportFrame !== undefined) window.cancelAnimationFrame(this.ganttViewportFrame);
     if (this.timelineSynchronizationFrame !== undefined) window.cancelAnimationFrame(this.timelineSynchronizationFrame);
@@ -774,13 +865,15 @@ export class GanttChart extends LitElement {
   updated(changed: Map<string, unknown>): void {
     if (changed.has('data') && this.data) {
       try {
-        this.applyData(parseJson(this.data), 'set-data', false);
+        const incoming = typeof this.data === 'string' ? parseJson(this.data) : this.data;
+        this.applyData(incoming, 'set-data', false);
       } catch (error) {
         this.setStatus(error instanceof Error ? error.message : this.t('invalidJson'), 'error');
       }
     }
     if (changed.has('taskColors')) this.applyColors();
     if (changed.has('theme') || changed.has('visualStyle') || changed.has('taskColors')) this.syncDetachedResourceAppearance();
+    this.restorePreservedScroll();
     this.updateStickyTaskLabels();
     if (this.taskContextMenu && this.taskContextSubmenuOpen) {
       this.renderRoot.querySelector<HTMLElement>('.gantt-context-submenu')?.classList.add('open');
@@ -795,10 +888,13 @@ export class GanttChart extends LitElement {
     const virtualRows = this.getVirtualTaskRows(visibleTasks);
     const selectedTask = this.selectedTaskId ? this.renderTaskIndex.get(this.selectedTaskId) || null : null;
     const showEmbeddedResources = Boolean(selectedTask && !this.resourcesUndocked);
-    const range = this.alignRangeToWeeks(getDateRange(flatTasks));
+    const range = this.getTimelineRenderRange(flatTasks);
     const totalDays = Math.max(31, diffDays(range.start, range.end) + 1);
+    this.prepareCalendarStates(range.start, totalDays);
     const dayWidth = this.getDayWidth();
     const taskRowHeight = this.getTaskRowHeight();
+    const creationHeight = this.inlineCreation.taskHeight(taskRowHeight);
+    const rowsHeight = creationHeight ? visibleTasks.length * taskRowHeight + creationHeight : Math.max(1, visibleTasks.length) * taskRowHeight;
     const timelineWidth = totalDays * dayWidth;
     const taskColumnsWidth = this.getColumns().reduce((width, column) => width + this.getColumnWidth(column), 0);
     const taskGridSizing = this.getTaskGridSizing();
@@ -809,7 +905,7 @@ export class GanttChart extends LitElement {
     const currentSearchId = searchResultIds[this.searchResultIndex];
 
     return html`
-      <div class="shell" @click=${this.closeOpenContextMenus} @contextmenu=${this.preventNativeContextMenu} style="--header-width:${this.getHeaderWidth(taskGridSizing)}px; --min-timeline-width:${taskGridSizing.minTimelineWidth}px; --task-columns-width:${taskColumnsWidth}px; --timeline-width:${timelineWidth}px; --day-width:${dayWidth}px; --task-row-height:${taskRowHeight}px; --task-bar-height:clamp(18px, calc(${taskRowHeight}px - 18px), 78px); --task-milestone-size:clamp(13px, calc(${taskRowHeight}px - 25px), 36px); --rows-height:${Math.max(1, visibleTasks.length) * taskRowHeight}px; --timeline-header-height:${this.getTimelineHeaderHeight()}px; --dependency-color:${dependencyColor}; --dependency-line-style:${this.options.dependencyLineStyle || 'solid'}; --gantt-panel-height:${this.getGanttPanelHeight()}; --resources-panel-height:${this.getResourcesPanelHeight()}">
+      <div class="shell" @click=${this.closeOpenContextMenus} @contextmenu=${this.preventNativeContextMenu} style="--header-width:${this.getHeaderWidth(taskGridSizing)}px; --min-timeline-width:${taskGridSizing.minTimelineWidth}px; --task-columns-width:${taskColumnsWidth}px; --timeline-width:${timelineWidth}px; --day-width:${dayWidth}px; --task-row-height:${taskRowHeight}px; --task-bar-height:clamp(18px, calc(${taskRowHeight}px - 18px), 78px); --task-milestone-size:clamp(13px, calc(${taskRowHeight}px - 25px), 36px); --rows-height:${rowsHeight}px; --timeline-header-height:${this.getTimelineHeaderHeight()}px; --dependency-color:${dependencyColor}; --dependency-line-style:${this.options.dependencyLineStyle || 'solid'}; --gantt-panel-height:${this.getGanttPanelHeight()}; --resources-panel-height:${this.getResourcesPanelHeight()}">
         <div class="toolbar">
           <button class="primary" @click=${() => this.chooseImport('.json,.xml,.mpp')}>${this.t('import')}</button>
           <button @click=${() => this.download('json')}>${this.t('exportJson')}</button>
@@ -854,16 +950,17 @@ export class GanttChart extends LitElement {
               <div class="task-header"><div class="task-columns">${this.getColumns().map(column => html`<div class="task-column" style="width:${this.getColumnWidth(column)}px" @dragover=${(event: DragEvent) => this.allowColumnDrop(event, 'task')} @drop=${(event: DragEvent) => this.dropColumn(event, 'task', column.key)}>${this.renderColumnDragHandle('task', column.key, column.label)}<span class="task-column-label">${column.label}</span>${this.canResizeColumns() ? html`<span class="task-column-resizer" role="separator" tabindex="0" aria-label=${this.tFormat('resizeColumn', { column: column.label })} @pointerdown=${(event: PointerEvent) => this.startTaskColumnResize(event, column)}></span>` : nothing}</div>`)}</div></div>
               ${this.renderTimelineHeader(range.start, totalDays, dayWidth)}
               <div class="task-pane" @scroll=${this.syncTaskHeaderScroll}>
-                <div class="task-content" style="height:${Math.max(1, visibleTasks.length) * taskRowHeight}px">
-                  ${visibleTasks.length ? virtualRows.rows.map(({ task, index }) => this.renderTaskRow(task, index, searchMatches, currentSearchId)) : html`<div class="empty">${this.t('noTasks')}</div>`}
+                <div class="task-content" style="height:${rowsHeight}px">
+                  ${visibleTasks.length ? virtualRows.rows.map(({ task, index }) => this.renderTaskRow(task, index, searchMatches, currentSearchId)) : creationHeight ? nothing : html`<div class="empty">${this.t('noTasks')}</div>`}
+                  ${this.inlineCreation.renderTask(this.getColumns(), column => this.getColumnWidth(column), visibleTasks.length * taskRowHeight, taskRowHeight)}
                 </div>
               </div>
               <div class="timeline-pane">
                 <div class="timeline-scroll ${this.isGanttPanEnabled() ? 'pan-enabled' : ''}" @scroll=${this.syncTimelineHeaderScroll} @pointerdown=${this.startGanttPan}>
-                  <div class="timeline-content" style="width:${timelineWidth}px; height:${Math.max(1, visibleTasks.length) * taskRowHeight}px" @contextmenu=${this.openTimelineContextMenu}>
+                  <div class="timeline-content" style="width:${timelineWidth}px; height:${rowsHeight}px" @contextmenu=${this.openTimelineContextMenu}>
                     ${this.renderNonWorkingDayBands(range.start, totalDays, dayWidth)}
                     ${this.renderWeekDividers(range.start, totalDays, dayWidth)}
-                    ${visibleTasks.length ? virtualRows.rows.map(({ task, index }) => this.renderTimelineRow(task, index, range.start, dayWidth, searchMatches)) : html`<div class="empty">${this.t('noPlanningData')}</div>`}
+                    ${visibleTasks.length ? virtualRows.rows.map(({ task, index }) => this.renderTimelineRow(task, index, range.start, totalDays, dayWidth, searchMatches)) : html`<div class="empty">${this.t('noPlanningData')}</div>`}
                     ${this.renderDependencies(visibleTasks, this.renderTaskIndex, range.start, dayWidth, virtualRows.start, virtualRows.end)}
                     ${this.renderTodayMarker(range.start, dayWidth, totalDays)}
                   </div>
@@ -883,6 +980,7 @@ export class GanttChart extends LitElement {
         ${this.renderResourceContextMenu()}
         ${this.renderGanttContextMenu()}
         ${this.renderTaskContextMenu()}
+        ${this.renderDependencyContextMenu()}
         ${this.renderTaskTooltip()}
         ${this.renderTaskEditor()}
         ${this.renderResourcePicker()}
@@ -892,6 +990,40 @@ export class GanttChart extends LitElement {
 
   setData(data: GanttData): void {
     this.applyData(data, 'set-data', true);
+  }
+
+  /** Updates one calendar's visual definition without recalculating planning data. */
+  updateCalendar(calendar: GanttCalendar): void {
+    if (!calendar?.id) return;
+    if (this.options.preserveScroll !== false) this.pendingPreservedScroll ||= this.capturePreservedScroll();
+    const next = this.cloneCalendar(calendar);
+    const index = this.calendars.findIndex(candidate => candidate.id === calendar.id);
+    if (index === -1) this.calendars = [...this.calendars, next];
+    else this.calendars = this.calendars.map((candidate, candidateIndex) => candidateIndex === index ? next : candidate);
+    this.calendarDateStates.delete(calendar.id);
+    this.requestUpdate();
+    this.syncDetachedResourceData();
+  }
+
+  /** Selects the project/budget calendar used by the main planning columns. */
+  setProjectCalendarId(calendarId: string | undefined): void {
+    if (this.projectCalendarId === calendarId) return;
+    if (this.options.preserveScroll !== false) this.pendingPreservedScroll ||= this.capturePreservedScroll();
+    this.projectCalendarId = calendarId || undefined;
+    this.requestUpdate();
+    this.syncDetachedResourceData();
+  }
+
+  /** Returns true while a task move/resize is active or awaiting a controlled commit. */
+  isScheduleEditing(): boolean {
+    return this.scheduleEditSession !== undefined;
+  }
+
+  /** Cancels the active task move/resize and restores its original project snapshot. */
+  cancelScheduleEdit(): void {
+    const session = this.scheduleEditSession;
+    if (!session) return;
+    this.cancelScheduleEditSession(session);
   }
 
   /** True when at least one completed local action can be undone. */
@@ -977,6 +1109,8 @@ export class GanttChart extends LitElement {
     if (this.detachedResourceWindow !== resourceWindow || resourceWindow.closed) return;
     const resourceChart = resourceWindow.document.createElement('gantt-chart') as unknown as GanttChart;
     resourceChart.resourcePanelOnly = true;
+    // One draft and one pending request across both surfaces; commits target the owner.
+    resourceChart.inlineCreation = this.inlineCreation;
     resourceChart.style.height = '100%';
     resourceChart.projectId = this.projectId;
     resourceChart.autoSave = false;
@@ -1009,6 +1143,7 @@ export class GanttChart extends LitElement {
     const task = this.selectedTaskId ? this.renderTaskIndex.get(this.selectedTaskId) : undefined;
     const range = this.alignRangeToWeeks(getDateRange(flatTasks));
     const totalDays = Math.max(31, diffDays(range.start, range.end) + 1);
+    this.prepareCalendarStates(range.start, totalDays);
     const dayWidth = this.getDayWidth();
     const timelineWidth = totalDays * dayWidth;
     const sizing = this.getTaskGridSizing();
@@ -1140,7 +1275,8 @@ export class GanttChart extends LitElement {
       name: this.projectName,
       tasks: this.getFlatTasks(),
       dependencies: this.dependencies.map(dependency => ({ ...dependency })),
-      calendars: this.calendars.map(calendar => ({ ...calendar, workingDays: calendar.workingDays ? [...calendar.workingDays] : undefined, hours: calendar.hours ? { ...calendar.hours } : undefined, exceptions: calendar.exceptions ? { ...calendar.exceptions } : undefined })),
+      projectCalendarId: this.projectCalendarId,
+      calendars: this.calendars.map(calendar => ({ ...calendar, workingDays: calendar.workingDays ? [...calendar.workingDays] : undefined, hours: calendar.hours ? { ...calendar.hours } : undefined, exceptions: calendar.exceptions ? { ...calendar.exceptions } : undefined, exceptionLabels: calendar.exceptionLabels ? { ...calendar.exceptionLabels } : undefined })),
       metadata: this.projectMetadata ? { ...this.projectMetadata } : undefined,
     };
   }
@@ -1363,6 +1499,45 @@ export class GanttChart extends LitElement {
     this.requestUpdate();
   }
 
+  /** Captures every scrollable Gantt surface before an incremental render. */
+  private capturePreservedScroll(): PreservedScrollState {
+    const selectors = [
+      '.gantt-viewport',
+      '.task-pane',
+      '.timeline-scroll',
+      '.gantt-horizontal-scroll',
+      '.resources-scroll',
+      '.resources-left',
+      '.resource-timeline',
+      '.resource-horizontal-scroll',
+    ];
+    return selectors.flatMap(selector => Array.from(this.renderRoot.querySelectorAll<HTMLElement>(selector)).map((element, index) => ({
+      selector,
+      index,
+      left: element.scrollLeft,
+      top: element.scrollTop,
+    })));
+  }
+
+  /** Restores scroll positions after Lit has reconciled the targeted rows. */
+  private restorePreservedScroll(): void {
+    const state = this.pendingPreservedScroll;
+    if (!state) return;
+    this.pendingPreservedScroll = undefined;
+    state.forEach(({ selector, index, left, top }) => {
+      const element = this.renderRoot.querySelectorAll<HTMLElement>(selector)[index];
+      if (!element) return;
+      element.scrollLeft = left;
+      element.scrollTop = top;
+    });
+  }
+
+  /**
+   * Applies a focused task patch without replacing the component's full data
+   * property. Parent summaries and the project summary are recalculated from
+   * the resulting task tree, while selection, editor tabs and scroll positions
+   * remain owned by the component.
+   */
   updateTask(taskId: string, patch: Partial<GanttTask>): void {
     const current = this.findTask(taskId);
     if (!current || !this.isTaskEditable(current)) return;
@@ -1372,7 +1547,106 @@ export class GanttChart extends LitElement {
       ? scheduleTaskDates(base, this.dependencies, taskId, patch.start || current.start, patch.end || current.end, patch.start !== undefined && patch.end !== undefined ? 'move' : patch.start !== undefined ? 'resize-start' : 'resize-end', (resource, date) => this.isResourceWorkingDay(resource, date))
       : base;
     updated = updated.map(task => task.id === taskId ? { ...task, ...patch, start: task.start, end: task.end, id: task.id } : task);
-    this.replaceFlatTasks(updated, 'task-updated', taskId);
+    this.replaceFlatTasks(updated, 'task-updated', taskId, { updateReason: this.getTaskUpdateReason(patch) });
+  }
+
+  /** Replaces all assignments for one task with the canonical response from a business API. */
+  updateTaskResources(taskId: string, resources: GanttResourceAssignment[]): void {
+    const task = this.findTask(taskId);
+    if (!task || !this.isTaskEditable(task)) return;
+    const previous = task.resources || [];
+    const normalized = resources.map(resource => {
+      const assignmentId = resource.assignmentId || resource.id || this.createId();
+      const { assignmentId: _assignmentId, ...canonical } = resource;
+      return { ...canonical, id: assignmentId };
+    });
+    const previousById = new Map(previous.map(resource => [resource.id, resource]));
+    const nextById = new Map(normalized.map(resource => [resource.id, resource]));
+    const added = normalized.filter(resource => !previousById.has(resource.id));
+    const removed = previous.filter(resource => !nextById.has(resource.id));
+    const updated = normalized.filter(resource => {
+      const before = previousById.get(resource.id);
+      return before && JSON.stringify(before) !== JSON.stringify(resource);
+    });
+    if (!added.length && !removed.length && !updated.length) return;
+    const reason: UpdateReason = added.length ? 'resource-added' : removed.length ? 'resource-removed' : 'resource-updated';
+    const assignmentIds = [...new Set([...added, ...removed, ...updated].map(resource => resource.id))];
+    const next = this.getFlatTasks().map(item => item.id === taskId ? { ...item, resources: normalized } : item);
+    this.replaceFlatTasks(next, 'task-updated', taskId, { updateReason: reason, assignmentIds });
+  }
+
+  /** Applies one canonical assignment or a small assignment patch. */
+  updateResourceAssignment(taskId: string, assignment: GanttResourceAssignmentPatch): void {
+    const task = this.findTask(taskId);
+    const assignmentId = assignment.assignmentId || assignment.id;
+    if (!task || !assignmentId || !this.isTaskEditable(task)) return;
+    const current = (task.resources || []).find(resource => resource.id === assignmentId);
+    if (!current) return;
+    const { assignmentId: _assignmentId, id: _id, ...changes } = assignment;
+    let updated: GanttResource = { ...current, ...changes, id: current.id };
+    if (assignment.quantity !== undefined && assignment.quantityByDate === undefined) {
+      updated.quantityByDate = this.createDistributedQuantities(task.start, task.end, Number(assignment.quantity) || 0, updated);
+      updated.totalQuantity = undefined;
+    }
+    if (assignment.quantity !== undefined || assignment.unitCost !== undefined || assignment.quantityByDate !== undefined) {
+      updated.cost = this.getResourceCost(updated);
+    }
+    const next = this.getFlatTasks().map(item => item.id === taskId
+      ? { ...item, resources: (item.resources || []).map(resource => resource.id === assignmentId ? updated : resource) }
+      : item);
+    if (JSON.stringify(current) === JSON.stringify(updated)) return;
+    this.replaceFlatTasks(next, 'task-updated', taskId, { updateReason: 'resource-updated', assignmentIds: [assignmentId] });
+  }
+
+  /** Removes one assignment without reloading the complete planning. */
+  removeResourceAssignment(taskId: string, assignmentId: string): void {
+    const task = this.findTask(taskId);
+    if (!task || !this.isTaskEditable(task) || !(task.resources || []).some(resource => resource.id === assignmentId)) return;
+    const next = this.getFlatTasks().map(item => item.id === taskId
+      ? { ...item, resources: (item.resources || []).filter(resource => resource.id !== assignmentId) }
+      : item);
+    this.replaceFlatTasks(next, 'task-updated', taskId, { updateReason: 'resource-removed', assignmentIds: [assignmentId] });
+  }
+
+  /** Recalculates one task, its parent phase roll-ups and dependent summaries. */
+  refreshTask(taskId: string): void {
+    const current = this.findTask(taskId);
+    if (!current) return;
+    let updated = scheduleTaskDates(
+      this.getFlatTasks(),
+      this.dependencies,
+      taskId,
+      current.start,
+      current.end,
+      'move',
+      (resource, date) => this.isResourceWorkingDay(resource, date),
+      { dependencyCalculation: 'live', resourceCalculation: 'live' },
+    );
+    updated = updated.map(task => task.id === taskId && task.resources?.length
+      ? {
+        ...task,
+        resources: task.resources.map(resource => {
+          if (!resource.quantityByDate) return resource;
+          const total = this.getResourceTotalQuantity(resource);
+          return {
+            ...resource,
+            quantity: total,
+            quantityByDate: this.createDistributedQuantities(task.start, task.end, total, resource),
+            totalQuantity: undefined,
+            cost: undefined,
+          };
+        }),
+      }
+      : task);
+    this.replaceFlatTasks(updated, 'task-updated', taskId, { updateReason: 'full-refresh' });
+  }
+
+  private getTaskUpdateReason(patch: Partial<GanttTask>): UpdateReason {
+    const keys = new Set(Object.keys(patch));
+    if (keys.has('start') || keys.has('end')) return 'task-date';
+    if (keys.has('parentId') || keys.has('type') || keys.has('children')) return 'task-hierarchy';
+    if (['quantity', 'quantityPerDay', 'unitCost', 'plannedCost', 'actualCost'].some(key => keys.has(key))) return 'manual-quantity';
+    return 'task-label';
   }
 
   /** Locks a task against every built-in editing interaction. Returns false when the task is unknown. */
@@ -1489,7 +1763,12 @@ export class GanttChart extends LitElement {
   removeDependency(from: string, to: string): void {
     const next = this.dependencies.filter(dependency => dependency.from !== from || dependency.to !== to);
     if (next.length === this.dependencies.length) return;
+    if (this.options.preserveScroll !== false) this.pendingPreservedScroll ||= this.capturePreservedScroll();
     this.dependencies = next;
+    if (this.dependencyContextMenu?.dependency.from === from && this.dependencyContextMenu.dependency.to === to) {
+      this.dependencyContextMenu = undefined;
+      this.focusDependencyContextMenu = false;
+    }
     this.requestUpdate();
     this.commit('dependency-updated', to);
   }
@@ -1575,7 +1854,11 @@ export class GanttChart extends LitElement {
             </div>` : nothing}
             ${resourceHeader.visible ? html`<div class="resource-day-header"><div class="resource-day-header-content"><div class="resource-day-window" style="left:${windowOffset}px">${resourceHeader.dayGrouping === 'week'
               ? resourceHeaderWeeks.map((week, index) => { const weekNumber = this.getWeekNumber(week.start); return html`<div class="resource-day week-date" style="width:${week.dayCount * dayWidth}px" title=${this.formatDayTitle(week.start)}>${resourceHeader.weekDateTemplate ? resourceHeader.weekDateTemplate({ start: week.start, weekNumber, number: weekNumber, index, dayCount: week.dayCount }) : this.renderDateHeaderCell(week.start, 'resources', index, resourceHeader.dayTemplate)}</div>`; })
-              : visibleDates.map((date, index) => html`<div class="resource-day ${this.isNonWorkingDay(date) ? 'weekend' : ''} ${this.isNonWorkingBlockStart(date) ? 'non-working-start' : ''} ${this.isWeekStart(date) ? 'week-start' : ''}" title=${this.formatDayTitle(date)}>${this.renderDateHeaderCell(date, 'resources', index, resourceHeader.dayTemplate)}</div>`)
+              : visibleDates.map((date, index) => {
+                const projectCalendar = this.getProjectCalendar();
+                const state = this.getCalendarDayState(projectCalendar, date);
+                return html`<div class="resource-day ${this.getCalendarBandClass(state, date, projectCalendar)} ${this.isNonWorkingBlockStart(date) ? 'non-working-start' : ''} ${this.isWeekStart(date) ? 'week-start' : ''}" title=${this.formatCalendarDayTitle(date, state)} aria-label=${this.formatCalendarDayTitle(date, state)}>${this.renderDateHeaderCell(date, 'resources', index, resourceHeader.dayTemplate)}</div>`;
+              })
             }</div></div></div>` : nothing}
             <div class="resources-left" @scroll=${this.syncResourceLeftHeaderScroll}>
               <div class="resources-grid">
@@ -1583,20 +1866,21 @@ export class GanttChart extends LitElement {
               ${resourceColumns.map(column => this.renderResourceCell(task, resource, column))}
               <div class="resource-cell resource-action">${taskEditable ? html`<button class="danger" aria-label="${this.t('delete')} ${resource.name}" @click=${() => this.removeResource(task.id, resource.id)}>×</button>` : nothing}</div>
             `)}
+            ${this.inlineCreation.renderResource(task, resourceColumns)}
           </div>
             </div>
             <div class="resource-timeline" @scroll=${this.syncResourceTimelineHeaderScroll}>
               <div class="resource-timeline-content" style="--day-width:${dayWidth}px">
           ${resources.map(resource => html`<div class="resource-day-row">
-            ${this.renderResourceCalendarBands(resource, visibleDates, windowOffset, dayWidth)}
+            ${this.renderResourceCalendarBands(task, resource, visibleDates, windowOffset, dayWidth)}
             ${this.renderResourceWeekDividers(visibleDates, windowOffset, dayWidth)}
             <div class="resource-day-window" style="left:${windowOffset}px">${visibleDates.map(date => {
             const dateKey = formatDate(date);
             const active = dateKey >= task.start && dateKey <= task.end;
-            const working = this.isResourceWorkingDay(resource, date);
+            const working = this.isResourceWorkingDay(resource, date, task);
             const value = resource.quantityByDate?.[dateKey];
             const unavailable = !working;
-            const title = unavailable ? `${this.getResourceCalendarLabel(resource)} — ${this.t('nonWorkingDay')}` : this.formatDayTitle(date);
+            const title = this.formatResourceCalendarDayTitle(task, resource, date);
             return html`<input class="resource-day-input ${unavailable ? 'calendar-closed' : ''}" type="number" min="0" step="1" ?disabled=${!taskEditable || !active || unavailable} value=${value === undefined ? '' : value} title=${title} aria-label="${resource.name} ${dateKey}" @change=${(event: Event) => this.updateResourceQuantity(task.id, resource.id, dateKey, (event.target as HTMLInputElement).value)} />`;
           })}</div></div>`)}
               </div>
@@ -1615,21 +1899,34 @@ export class GanttChart extends LitElement {
   private renderResourceCell(task: GanttTask, resource: GanttResource, column: GanttResourceColumn) {
     const taskEditable = this.isTaskEditable(task);
     const value = this.getResourceColumnValue(task, resource, column);
-    const numeric = this.isNumericColumn(column);
+    const numeric = this.isNumericColumn(column) || column.editor === 'number';
     const formattedValue = this.formatResourceColumnValue(value, column, resource, task);
     const context: GanttResourceColumnRenderContext = { resource, task, value, formattedValue };
     const tooltip = this.getResourceColumnTooltip(column, context);
-    if (column.key === 'quantity' || column.key === 'totalQuantity') {
+    if (column.editor === 'select') {
+      const options = column.options || [];
+      if (!column.editable || options.length === 0) {
+        return html`<div class="resource-cell ${numeric ? 'numeric' : ''}" title=${ifDefined(tooltip)}>${formattedValue}</div>`;
+      }
+      const rawValue = value === null || value === undefined ? '' : String(value);
+      const hasMatchingOption = options.some(option => String(option.value) === rawValue);
+      const fallback = !hasMatchingOption
+        ? html`<option value=${rawValue} disabled selected>${formattedValue || rawValue}</option>`
+        : nothing;
+      return html`<div class="resource-cell ${numeric ? 'numeric' : ''}"><select .value=${rawValue} ?disabled=${!taskEditable} title=${ifDefined(tooltip)} aria-label=${`${column.label} — ${resource.name}`} @change=${(event: Event) => this.updateResourceColumn(task, resource, column, (event.target as HTMLSelectElement).value)}>${fallback}${options.map(option => html`<option value=${String(option.value)} ?disabled=${option.disabled} ?selected=${String(option.value) === rawValue}>${option.label}</option>`)}</select></div>`;
+    }
+    if (!column.editor && (column.key === 'quantity' || column.key === 'totalQuantity')) {
       return html`<div class="resource-cell total"><input type="number" min=${ifDefined(this.getResourceColumnMin(column))} .step=${this.getResourceColumnStepProperty(column)} ?disabled=${!taskEditable} value=${value ?? 0} title=${ifDefined(tooltip)} aria-label="${this.t('quantity')} ${resource.name}" @change=${(event: Event) => this.distributeResourceTotal(task.id, resource.id, (event.target as HTMLInputElement).value)} /></div>`;
     }
-    if (column.key === 'calendarId' && column.editable) {
+    if (!column.editor && column.key === 'calendarId' && column.editable) {
       return html`<div class="resource-cell"><select .value=${resource.calendarId || ''} ?disabled=${!taskEditable} title=${ifDefined(tooltip)} aria-label=${this.tFormat('resourceCalendarFor', { name: resource.name })} @change=${(event: Event) => this.updateResource(task.id, resource.id, 'calendarId', (event.target as HTMLSelectElement).value || undefined)}><option value="">${this.t('resource')}</option>${this.calendars.map(calendar => html`<option value=${calendar.id}>${calendar.name}</option>`)}</select></div>`;
     }
-    if (column.editable && ['name', 'type', 'unitCost', 'quantity'].includes(column.key)) {
-      return html`<div class="resource-cell ${numeric ? 'numeric' : ''}"><input type=${numeric ? 'number' : 'text'} min=${ifDefined(this.getResourceColumnMin(column))} .step=${this.getResourceColumnStepProperty(column)} ?disabled=${!taskEditable} .value=${String(value ?? '')} title=${ifDefined(tooltip)} @change=${(event: Event) => this.updateResourceColumn(task, resource, column, (event.target as HTMLInputElement).value)} /></div>`;
-    }
     if (column.editable) {
-      return html`<div class="resource-cell ${numeric ? 'numeric' : ''}"><input type=${numeric ? 'number' : 'text'} min=${ifDefined(this.getResourceColumnMin(column))} .step=${this.getResourceColumnStepProperty(column)} ?disabled=${!taskEditable} .value=${String(value ?? '')} title=${ifDefined(tooltip)} @change=${(event: Event) => this.updateResourceColumn(task, resource, column, (event.target as HTMLInputElement).value)} /></div>`;
+      const editor = column.editor || (this.isNumericColumn(column) ? 'number' : 'text');
+      const inputType = editor === 'number' ? 'number' : 'text';
+      const minimum = inputType === 'number' ? this.getResourceColumnMin(column) : undefined;
+      const step = inputType === 'number' ? this.getResourceColumnStepProperty(column) : '';
+      return html`<div class="resource-cell ${numeric ? 'numeric' : ''}"><input type=${inputType} min=${ifDefined(minimum)} .step=${step} ?disabled=${!taskEditable} .value=${String(value ?? '')} title=${ifDefined(tooltip)} aria-label=${`${column.label} — ${resource.name}`} @change=${(event: Event) => this.updateResourceColumn(task, resource, column, (event.target as HTMLInputElement).value)} /></div>`;
     }
     return html`<div class="resource-cell ${numeric ? 'numeric' : ''}" title=${ifDefined(tooltip)}>${formattedValue}</div>`;
   }
@@ -1639,6 +1936,7 @@ export class GanttChart extends LitElement {
     switch (column.key) {
       case 'name': return resource.name;
       case 'type': return resource.type;
+      case 'unit': return resource.unit ?? resource.metadata?.unit ?? '';
       case 'unitCost': return resource.unitCost;
       case 'quantity': return this.getResourceTotalQuantity(resource);
       case 'calendarId': return this.getResourceCalendarLabel(resource);
@@ -1671,13 +1969,13 @@ export class GanttChart extends LitElement {
   }
 
   private getResourceColumnMin(column: GanttResourceColumn): number | undefined {
-    if (!this.isNumericColumn(column) && column.key !== 'totalQuantity') return undefined;
+    if (!this.isNumericResourceEditor(column) && column.key !== 'totalQuantity') return undefined;
     if (column.min !== undefined) return column.min;
     return ['unitCost', 'quantity', 'totalQuantity'].includes(column.key) ? 0 : undefined;
   }
 
   private getResourceColumnStep(column: GanttResourceColumn): number | 'any' | undefined {
-    if (!this.isNumericColumn(column) && column.key !== 'totalQuantity') return undefined;
+    if (!this.isNumericResourceEditor(column) && column.key !== 'totalQuantity') return undefined;
     if (column.step !== undefined) return column.step;
     if (column.type === 'decimal') return 'any';
     if (column.type === 'integer' || ['quantity', 'totalQuantity'].includes(column.key)) return 1;
@@ -1691,12 +1989,16 @@ export class GanttChart extends LitElement {
   }
 
   private normalizeResourceColumnValue(column: GanttResourceColumn, value: string): number | string {
-    if (!this.isNumericColumn(column)) return value;
+    if (!this.isNumericResourceEditor(column)) return value;
     let numberValue = Number(value);
     if (!Number.isFinite(numberValue)) numberValue = 0;
     if (column.type === 'integer') numberValue = Math.trunc(numberValue);
     if (column.min !== undefined) numberValue = Math.max(column.min, numberValue);
     return numberValue;
+  }
+
+  private isNumericResourceEditor(column: GanttResourceColumn): boolean {
+    return column.editor ? column.editor === 'number' : this.isNumericColumn(column);
   }
 
   private updateResourceColumn(task: GanttTask, resource: GanttResource, column: GanttResourceColumn, value: string): void {
@@ -1706,7 +2008,7 @@ export class GanttChart extends LitElement {
       return;
     }
     const nextValue = this.normalizeResourceColumnValue(column, value);
-    if (['name', 'type', 'unitCost', 'quantity', 'maxUnits'].includes(column.key)) {
+    if (['name', 'type', 'unit', 'unitCost', 'quantity', 'maxUnits'].includes(column.key)) {
       this.updateResource(task.id, resource.id, column.key as keyof GanttResource, nextValue);
       return;
     }
@@ -1742,6 +2044,32 @@ export class GanttChart extends LitElement {
         `}
       </div>
     `;
+  }
+
+  private renderDependencyContextMenu() {
+    const menu = this.dependencyContextMenu;
+    const template = this.options.dependencyContextMenuTemplate;
+    if (!menu || !template) return nothing;
+    const from = this.findTask(menu.dependency.from);
+    const to = this.findTask(menu.dependency.to);
+    if (!from || !to) return nothing;
+    const editable = this.isTaskEditable(from) && this.isTaskEditable(to);
+    return html`
+      <div class="resource-context-backdrop" @click=${this.closeDependencyContextMenu}></div>
+      <div class="task-context-menu dependency-context-menu" role="menu" tabindex="-1" style="left:${menu.x}px; top:${menu.y}px" @click=${(event: Event) => event.stopPropagation()}>
+        ${template(this.getDependencyContextMenuTemplateContext(menu.dependency, editable))}
+      </div>
+    `;
+  }
+
+  private getDependencyContextMenuTemplateContext(dependency: GanttDependency, editable: boolean): Parameters<GanttDependencyContextMenuTemplate>[0] {
+    return {
+      gantt: this,
+      dependency,
+      editable,
+      close: this.closeDependencyContextMenu,
+      fitToView: () => this.fitDependencyToView(dependency),
+    };
   }
 
   private renderTaskTooltip() {
@@ -1947,14 +2275,16 @@ export class GanttChart extends LitElement {
     `;
   }
 
-  private renderTimelineRow(task: GanttTask, index: number, start: Date, dayWidth: number, searchMatches: Set<string>) {
-    const left = this.dateToX(task.start, start, dayWidth);
-    const width = Math.max(dayWidth, (diffDays(task.start, task.end) + 1) * dayWidth);
-    const color = this.getTaskColor(task);
-    const selected = task.id === this.selectedTaskId;
+  private renderTimelineRow(task: GanttTask, index: number, start: Date, totalDays: number, dayWidth: number, searchMatches: Set<string>) {
+    const displayTask = this.getSchedulePreviewTask(task);
+    const left = this.dateToX(displayTask.start, start, dayWidth);
+    const width = Math.max(dayWidth, (diffDays(displayTask.start, displayTask.end) + 1) * dayWidth);
+    const color = this.getTaskColor(displayTask);
+    const selected = displayTask.id === this.selectedTaskId;
     return html`
-      <div class="timeline-row ${index % 2 ? 'alt' : ''} ${searchMatches.has(task.id) ? 'search-match' : ''}" style="top:${index * this.getTaskRowHeight()}px">
-        ${this.renderTaskBar(task, left, width, color, selected, start, dayWidth)}
+      <div class="timeline-row ${index % 2 ? 'alt' : ''} ${searchMatches.has(displayTask.id) ? 'search-match' : ''}" style="top:${index * this.getTaskRowHeight()}px">
+        ${this.renderTaskCalendarBands(displayTask, start, totalDays, dayWidth)}
+        ${this.renderTaskBar(displayTask, left, width, color, selected, start, dayWidth)}
       </div>
     `;
   }
@@ -2060,7 +2390,10 @@ export class GanttChart extends LitElement {
         ${header.showWeeks ? html`<div class="weeks">${weeks.map((week, index) => html`<div class="week" style="width:${week.count * dayWidth}px">${header.weekTemplate && week.start ? header.weekTemplate({ start: week.start, weekNumber: week.number, number: week.number, index, dayCount: week.count }) : this.tFormat('weekNumber', { number: week.number })}</div>`)}</div>` : nothing}
         ${header.showDays ? html`<div class="days">${header.dayGrouping === 'week'
           ? weeks.map((week, index) => week.start ? html`<div class="day week-date" style="width:${week.count * dayWidth}px" title=${this.formatDayTitle(week.start)}>${header.weekDateTemplate ? header.weekDateTemplate({ start: week.start, weekNumber: week.number, number: week.number, index, dayCount: week.count }) : this.renderDateHeaderCell(week.start, 'gantt', index, header.dayTemplate)}</div>` : nothing)
-          : dates.map((date, index) => html`<div class="day ${this.isNonWorkingDay(date) ? 'weekend' : ''} ${this.isNonWorkingBlockStart(date) ? 'non-working-start' : ''} ${this.isWeekStart(date) ? 'week-start' : ''}" style="width:${dayWidth}px" title=${this.formatDayTitle(date)}>${this.renderDateHeaderCell(date, 'gantt', index, header.dayTemplate)}</div>`)
+          : dates.map((date, index) => {
+            const state = this.getCalendarDayState(this.getProjectCalendar(), date);
+            return html`<div class="day ${this.getCalendarBandClass(state, date, this.getProjectCalendar())} ${this.isNonWorkingBlockStart(date) ? 'non-working-start' : ''} ${this.isWeekStart(date) ? 'week-start' : ''}" style="width:${dayWidth}px" title=${this.formatCalendarDayTitle(date, state)} aria-label=${this.formatCalendarDayTitle(date, state)}>${this.renderDateHeaderCell(date, 'gantt', index, header.dayTemplate)}</div>`;
+          })
         }</div>` : nothing}
       </div>
     `;
@@ -2134,13 +2467,14 @@ export class GanttChart extends LitElement {
   }
 
   private renderNonWorkingDayBands(start: Date, totalDays: number, dayWidth: number) {
-    if (!this.getNonWorkingDays().length) return nothing;
+    const calendar = this.getProjectCalendar();
     return Array.from({ length: totalDays }, (_, index) => {
       const date = new Date(start.getTime());
       date.setUTCDate(date.getUTCDate() + index);
-      return this.isNonWorkingDay(date)
-        ? html`<div class="non-working-day-band ${this.isNonWorkingBlockStart(date) ? 'non-working-start' : ''}" style="left:${index * dayWidth}px; width:${dayWidth}px"></div>`
-        : nothing;
+      const state = this.getCalendarDayState(calendar, date);
+      if (state.working && state.exception !== 'working') return nothing;
+      const title = this.formatCalendarDayTitle(date, state);
+      return html`<div class="non-working-day-band ${this.getCalendarBandClass(state, date, calendar)} ${this.isNonWorkingBlockStart(date) ? 'non-working-start' : ''}" style="left:${index * dayWidth}px; width:${dayWidth}px" title=${title} aria-label=${title}></div>`;
     });
   }
 
@@ -2161,10 +2495,32 @@ export class GanttChart extends LitElement {
       : nothing);
   }
 
-  private renderResourceCalendarBands(resource: GanttResource, dates: Date[], offset: number, dayWidth: number) {
-    return dates.map((date, index) => !this.isResourceWorkingDay(resource, date)
-      ? html`<div class="resource-calendar-closed ${this.isResourceNonWorkingBlockStart(resource, date) ? 'non-working-start' : ''}" style="left:${offset + index * dayWidth}px; width:${dayWidth}px"></div>`
-      : nothing);
+  private renderTaskCalendarBands(task: GanttTask, start: Date, totalDays: number, dayWidth: number) {
+    const calendar = this.getTaskCalendar(task);
+    const projectCalendar = this.getProjectCalendar();
+    if (!calendar || calendar.id === projectCalendar?.id) return nothing;
+    return Array.from({ length: totalDays }, (_, index) => {
+      const date = new Date(start.getTime());
+      date.setUTCDate(date.getUTCDate() + index);
+      const state = this.getCalendarDayState(calendar, date);
+      const baseState = this.getCalendarDayState(projectCalendar, date);
+      if (!state.exception && state.working === baseState.working) return nothing;
+      const title = this.formatCalendarDayTitle(date, state);
+      return html`<div class="task-calendar-band ${this.getCalendarBandClass(state, date, calendar)}" style="left:${index * dayWidth}px; width:${dayWidth}px" title=${title} aria-label=${title}></div>`;
+    });
+  }
+
+  private renderResourceCalendarBands(task: GanttTask, resource: GanttResource, dates: Date[], offset: number, dayWidth: number) {
+    const calendar = this.getResourceCalendar(resource, task);
+    return dates.map((date, index) => {
+      const state = this.getCalendarDayState(calendar, date);
+      if (state.working && state.exception !== 'working') return nothing;
+      const title = this.formatCalendarDayTitle(date, state, calendar?.name);
+      const className = this.getCalendarBandClass(state, date, calendar);
+      return state.working
+        ? html`<div class="resource-calendar-open ${className}" style="left:${offset + index * dayWidth}px; width:${dayWidth}px" title=${title} aria-label=${title}></div>`
+        : html`<div class="resource-calendar-closed ${className} ${this.isResourceNonWorkingBlockStart(resource, date, task) ? 'non-working-start' : ''}" style="left:${offset + index * dayWidth}px; width:${dayWidth}px" title=${title} aria-label=${title}></div>`;
+    });
   }
 
   private renderDependencies(
@@ -2176,6 +2532,7 @@ export class GanttChart extends LitElement {
     lastVisibleRow = visibleTasks.length,
   ) {
     if (this.options.showDependencies === false || !this.dependencies.length) return nothing;
+    const hasDependencyContextMenu = Boolean(this.options.dependencyContextMenuTemplate);
     const rows = new Map(visibleTasks.map((task, index) => [task.id, index]));
     const paths = this.dependencies.flatMap(dependency => {
       const from = taskById.get(dependency.from);
@@ -2200,52 +2557,95 @@ export class GanttChart extends LitElement {
       const sourceElbowX = fromX + 8;
       const targetApproachX = Math.max(0, targetX - 8);
       const middleY = (y1 + y2) / 2;
+      const fromName = from.name || dependency.from;
+      const toName = to.name || dependency.to;
+      const dependencyLabel = `${fromName} → ${toName}`;
       return [html`
-        <div class="dependency-connector">
+        <div class="dependency-connector" data-dependency-from=${dependency.from} data-dependency-to=${dependency.to}>
           <span class="dependency-line horizontal" style="left:${fromX}px; top:${y1}px; width:${Math.max(1, sourceElbowX - fromX)}px"></span>
           <span class="dependency-line vertical" style="left:${sourceElbowX}px; top:${Math.min(y1, middleY)}px; height:${Math.max(1, Math.abs(middleY - y1))}px"></span>
           <span class="dependency-line horizontal" style="left:${Math.min(sourceElbowX, targetApproachX)}px; top:${middleY}px; width:${Math.max(1, Math.abs(targetApproachX - sourceElbowX))}px"></span>
           <span class="dependency-line vertical" style="left:${targetApproachX}px; top:${Math.min(middleY, y2)}px; height:${Math.max(1, Math.abs(y2 - middleY))}px"></span>
           <span class="dependency-line horizontal" style="left:${targetApproachX}px; top:${y2}px; width:${Math.max(1, targetX - targetApproachX)}px"></span>
           <span class="dependency-dot" style="left:${fromX}px; top:${y1}px"></span>
-          <span class="dependency-arrow right" style="left:${targetX}px; top:${y2}px"></span>
+          ${hasDependencyContextMenu ? html`
+            <button type="button" class="dependency-hit-target" style="left:${targetX - 2}px; top:${y2 - 10}px" aria-label=${dependencyLabel} title=${dependencyLabel}
+              @contextmenu=${(event: MouseEvent) => this.openDependencyContextMenu(dependency, event)}
+              @keydown=${(event: KeyboardEvent) => this.handleDependencyKeyDown(dependency, event)}>
+              <span class="dependency-arrow right" style="left:2px; top:10px"></span>
+            </button>
+          ` : html`<span class="dependency-arrow right" style="left:${targetX}px; top:${y2}px"></span>`}
         </div>
       `];
     });
-    return html`<div class="dependency-layer" aria-hidden="true">${paths}</div>`;
+    return html`<div class="dependency-layer" aria-hidden=${hasDependencyContextMenu ? 'false' : 'true'}>${paths}</div>`;
   }
 
-  private applyData(data: GanttData, reason: GanttChangeReason, notify: boolean): void {
+  private applyData(
+    data: GanttData,
+    reason: GanttChangeReason,
+    notify: boolean,
+    options: { applyInitialDependencySchedule?: boolean; resetHistory?: boolean; emitSummary?: boolean } = {},
+  ): void {
+    if (this.options.preserveScroll !== false) {
+      this.pendingPreservedScroll ||= this.capturePreservedScroll();
+    }
     this.dependencies = (data.dependencies || []).map(dependency => ({ ...dependency }));
-    this.calendars = (data.calendars || []).map(calendar => ({
-      ...calendar,
-      workingDays: calendar.workingDays ? [...calendar.workingDays] : undefined,
-      hours: calendar.hours ? { ...calendar.hours } : undefined,
-      exceptions: calendar.exceptions ? { ...calendar.exceptions } : undefined,
-    }));
-    const scheduledTasks = this.applyInitialDependencySchedule(data.tasks);
+    this.projectCalendarId = data.projectCalendarId;
+    this.calendars = (data.calendars || []).map(calendar => this.cloneCalendar(calendar));
+    this.calendarDateStates.clear();
+    const scheduledTasks = options.applyInitialDependencySchedule === false ? data.tasks : this.applyInitialDependencySchedule(data.tasks);
     this.tasks = buildTaskTree(this.withDefaultTaskColors(scheduledTasks));
     this.projectName = data.name;
     this.projectMetadata = data.metadata ? { ...data.metadata } : undefined;
-    if (!this.historyRestoring) this.resetHistory();
+    if (options.resetHistory !== false && !this.historyRestoring) this.resetHistory();
     this.requestUpdate();
     if (notify) this.commit(reason);
     else {
-      this.emitProjectSummary();
+      if (options.emitSummary !== false) this.emitProjectSummary();
       this.syncDetachedResourceData();
     }
   }
 
-  private replaceFlatTasks(tasks: GanttTask[], reason: GanttChangeReason, taskId?: string): void {
-    this.tasks = buildTaskTree(this.withDefaultTaskColors(tasks));
-    this.requestUpdate();
-    this.commit(reason, taskId);
+  private cloneCalendar(calendar: GanttCalendar): GanttCalendar {
+    return {
+      ...calendar,
+      workingDays: calendar.workingDays ? [...calendar.workingDays] : undefined,
+      hours: calendar.hours ? { ...calendar.hours } : undefined,
+      exceptions: calendar.exceptions ? { ...calendar.exceptions } : undefined,
+      exceptionLabels: calendar.exceptionLabels ? { ...calendar.exceptionLabels } : undefined,
+    };
   }
 
-  private commit(reason: GanttChangeReason, taskId?: string): void {
-    const change = this.createChange(reason, taskId);
+  private replaceFlatTasks(tasks: GanttTask[], reason: GanttChangeReason, taskId?: string, incremental?: IncrementalCommitOptions): void {
+    if (this.options.preserveScroll !== false) {
+      this.pendingPreservedScroll ||= this.capturePreservedScroll();
+    }
+    if (this.options.incrementalUpdates === false) {
+      this.applyData({ ...this.getData(), tasks }, 'set-data', false, {
+        applyInitialDependencySchedule: false,
+        resetHistory: false,
+        emitSummary: false,
+      });
+    } else {
+      this.tasks = buildTaskTree(this.withDefaultTaskColors(tasks));
+      this.requestUpdate();
+    }
+    this.commit(reason, taskId, undefined, incremental);
+  }
+
+  private commit(reason: GanttChangeReason, taskId?: string, revision?: number, incremental?: IncrementalCommitOptions): void {
+    const change = this.createChange(reason, taskId, revision);
     this.recordHistory(change.data);
     this.dispatch('tasks-changed', change);
+    if (incremental?.updateReason && taskId) {
+      const taskUpdated: GanttTaskUpdatedEventDetail = { taskId, reason: incremental.updateReason, revision: change.revision };
+      this.dispatch('task-updated', taskUpdated);
+      incremental.assignmentIds?.forEach(assignmentId => {
+        const assignmentUpdated: GanttResourceAssignmentUpdatedEventDetail = { taskId, assignmentId, revision: change.revision };
+        this.dispatch('resource-assignment-updated', assignmentUpdated);
+      });
+    }
     this.emitProjectSummary();
     this.options.onTasksChange?.(change.data);
     this.syncDetachedResourceData();
@@ -2287,8 +2687,9 @@ export class GanttChart extends LitElement {
     }
   }
 
-  private createChange(reason: GanttChangeReason, taskId?: string): GanttChange {
-    return { projectId: this.projectId || null, revision: ++this.revision, reason, taskId, data: this.getData() };
+  private createChange(reason: GanttChangeReason, taskId?: string, revision?: number): GanttChange {
+    this.revision = revision === undefined ? this.revision + 1 : revision;
+    return { projectId: this.projectId || null, revision: this.revision, reason, taskId, data: this.getData() };
   }
 
   private emitProjectSummary(): void { this.dispatch('gantt-summary-changed', this.getProjectSummary()); }
@@ -2437,19 +2838,52 @@ export class GanttChart extends LitElement {
     document.addEventListener('pointerup', stop, { once: true });
   };
 
-  private changeZoom(delta: number): void {
+  private changeZoom(delta: number, anchor?: ZoomAnchor): void {
     const min = this.options.minZoom ?? .5;
     const max = this.options.maxZoom ?? 3;
-    this.zoom = Math.max(min, Math.min(max, this.zoom + delta));
+    const nextZoom = Math.max(min, Math.min(max, this.zoom + delta));
+    if (nextZoom === this.zoom) return;
+    this.zoom = nextZoom;
     this.requestUpdate();
+
+    if (!anchor) return;
+    void this.updateComplete.then(() => {
+      const timeline = this.renderRoot.querySelector<HTMLElement>('.timeline-scroll');
+      if (!timeline) return;
+
+      const nextContentX = anchor.contentX * (this.getDayWidth() / anchor.dayWidth);
+      const maxScrollLeft = Math.max(0, timeline.scrollWidth - timeline.clientWidth);
+      const nextScrollLeft = Math.max(0, Math.min(maxScrollLeft, nextContentX - anchor.viewportOffset));
+      timeline.scrollLeft = nextScrollLeft;
+      this.synchronizeTimelineScroll(nextScrollLeft, timeline);
+    });
   }
 
   private handleWheel = (event: WheelEvent): void => {
     if (event.ctrlKey || event.metaKey) {
       event.preventDefault();
-      this.changeZoom(event.deltaY > 0 ? -.1 : .1);
+      this.changeZoom(event.deltaY > 0 ? -.1 : .1, this.getZoomAnchor(event));
     }
   };
+
+  /** Keeps the date below the pointer fixed while Ctrl/Cmd + wheel changes the scale. */
+  private getZoomAnchor(event: WheelEvent): ZoomAnchor | undefined {
+    const timeline = this.renderRoot.querySelector<HTMLElement>('.timeline-scroll');
+    if (!timeline) return undefined;
+
+    const target = event.target instanceof Element
+      ? event.target.closest<HTMLElement>('.timeline-scroll, .timeline-header, .resource-timeline, .resource-day-header')
+      : null;
+    const rect = target?.getBoundingClientRect();
+    const viewportOffset = target && rect
+      ? Math.max(0, Math.min(timeline.clientWidth, event.clientX - rect.left))
+      : timeline.clientWidth / 2;
+    return {
+      contentX: timeline.scrollLeft + viewportOffset,
+      viewportOffset,
+      dayWidth: this.getDayWidth(),
+    };
+  }
 
   private isGanttPanEnabled(): boolean {
     const pan = this.options.pan;
@@ -2645,7 +3079,12 @@ export class GanttChart extends LitElement {
   private handleKeyDown = (event: KeyboardEvent): void => {
     if (this.isEditableKeyboardTarget(event.target)) return;
     if (event.key === 'Escape') {
-      const hasOverlay = Boolean(this.resourceContextMenu || this.ganttContextMenu || this.taskContextMenu || this.taskEditorId || this.resourcePickerTaskId);
+      if (this.isScheduleEditing()) {
+        this.cancelScheduleEdit();
+        event.preventDefault();
+        return;
+      }
+      const hasOverlay = Boolean(this.resourceContextMenu || this.ganttContextMenu || this.taskContextMenu || this.dependencyContextMenu || this.taskEditorId || this.resourcePickerTaskId);
       this.closeOpenContextMenus();
       this.closeTaskEditor();
       if (hasOverlay) event.preventDefault();
@@ -2757,17 +3196,104 @@ export class GanttChart extends LitElement {
     return tasks.findIndex(task => task.id === taskId) < tasks.findIndex(task => task.id === targetTaskId) ? 'after' : 'before';
   }
 
-  private startBarDrag(event: PointerEvent, task: GanttTask, mode: 'move' | 'resize-start' | 'resize-end'): void {
-    if (event.button !== 0 || !this.isTaskEditable(task)) return;
+  private isScheduleEditingEnabled(): boolean {
+    const configured = this.options.scheduleEditing;
+    return !configured || configured.enabled !== false;
+  }
+
+  private isDeferredScheduleEdit(): boolean {
+    if (this.options.recalculateOnMoveEnd === false) return true;
+    const configured = this.options.scheduleEditing;
+    if (!configured || configured.enabled === false) return false;
+    return configured.commitMode === 'controlled'
+      || configured.dependencyCalculation === 'on-commit'
+      || configured.resourceCalculation === 'on-commit'
+      || configured.costCalculation === 'on-commit'
+      || configured.summaryCalculation === 'on-commit';
+  }
+
+  private isSchedulePreviewOnly(): boolean {
+    if (this.options.recalculateOnMoveEnd === false) return true;
+    const configured = this.options.scheduleEditing;
+    if (!configured || configured.enabled === false) return false;
+    const calculations = [configured.dependencyCalculation, configured.resourceCalculation, configured.costCalculation, configured.summaryCalculation];
+    return configured.commitMode === 'controlled' || calculations.every(mode => mode === 'on-commit');
+  }
+
+  private getScheduleCalculationOptions(): ScheduleCalculationOptions {
+    const configured = this.options.scheduleEditing;
+    return {
+      dependencyCalculation: configured?.dependencyCalculation,
+      resourceCalculation: configured?.resourceCalculation,
+    };
+  }
+
+  private cloneGanttData(data: GanttData): GanttData {
+    return structuredClone(data);
+  }
+
+  private createSchedulePreviewData(session: NonNullable<GanttChart['scheduleEditSession']>): GanttData {
+    const preview = this.cloneGanttData(session.originalData);
+    preview.tasks = preview.tasks.map(task => task.id === session.taskId
+      ? { ...task, start: session.proposedStart, end: session.proposedEnd }
+      : task);
+    return preview;
+  }
+
+  private createScheduleEditContext(session: NonNullable<GanttChart['scheduleEditSession']>, previewData?: GanttData): GanttScheduleEditContext {
+    return {
+      taskId: session.taskId,
+      mode: session.mode,
+      originalStart: session.originalStart,
+      originalEnd: session.originalEnd,
+      proposedStart: session.proposedStart,
+      proposedEnd: session.proposedEnd,
+      originalData: this.cloneGanttData(session.originalData),
+      previewData: this.cloneGanttData(previewData || (this.isSchedulePreviewOnly() ? this.createSchedulePreviewData(session) : this.getData())),
+    };
+  }
+
+  private emitScheduleEditPreview(): void {
+    const session = this.scheduleEditSession;
+    const callback = this.options.onScheduleEditPreview || this.options.scheduleEditing?.onScheduleEditPreview;
+    if (!session || !callback) return;
+    callback(this.createScheduleEditContext(session));
+  }
+
+  private startBarDrag(event: PointerEvent, task: GanttTask, mode: GanttScheduleEditMode): void {
+    if (event.button !== 0 || this.isScheduleEditing() || !this.isTaskEditable(task) || !this.isScheduleEditingEnabled()) return;
     this.closeTaskTooltip();
     event.preventDefault();
     event.stopPropagation();
     this.selectTask(task.id);
     const timeline = this.renderRoot.querySelector<HTMLElement>('.timeline-scroll');
-    this.barDrag = { taskId: task.id, mode, startX: event.clientX, originalStart: task.start, originalEnd: task.end, currentStart: task.start, currentEnd: task.end, baseTasks: this.getFlatTasks(), changed: false, initialScrollLeft: timeline?.scrollLeft || 0, pointerX: event.clientX };
+    if (this.options.scheduleEditing?.costCalculation === 'on-commit' && !this.renderTaskCosts.size) {
+      this.renderTaskCosts = calculateTaskCosts(this.tasks, resource => this.getResourceCost(resource));
+    }
+    const baseTasks = this.getFlatTasks();
+    const timelineRange = this.alignRangeToWeeks(getDateRange(baseTasks));
+    const session = {
+      taskId: task.id,
+      mode,
+      originalStart: task.start,
+      originalEnd: task.end,
+      proposedStart: task.start,
+      proposedEnd: task.end,
+      originalData: this.cloneGanttData(this.getData()),
+      baseTasks,
+      baseRevision: this.revision,
+      timelineRange,
+    };
+    this.scheduleEditSession = session;
+    this.scheduleEditPreview = this.isSchedulePreviewOnly()
+      ? { taskId: task.id, start: task.start, end: task.end }
+      : undefined;
+    this.barDrag = { taskId: task.id, mode, startX: event.clientX, originalStart: task.start, originalEnd: task.end, currentStart: task.start, currentEnd: task.end, baseTasks: session.baseTasks, changed: false, initialScrollLeft: timeline?.scrollLeft || 0, pointerX: event.clientX, timelineRange };
     document.addEventListener('pointermove', this.handleBarDragMove);
     document.addEventListener('pointerup', this.finishBarDrag, { once: true });
-    this.barDrag.autoScrollFrame = window.requestAnimationFrame(this.handleBarDragAutoScroll);
+    document.addEventListener('pointercancel', this.cancelScheduleEdit);
+    (this.options.onScheduleEditStart || this.options.scheduleEditing?.onScheduleEditStart)?.(this.createScheduleEditContext(session));
+    if (this.scheduleEditSession === session && this.barDrag) this.barDrag.autoScrollFrame = window.requestAnimationFrame(this.handleBarDragAutoScroll);
   }
 
   private handleBarDragMove = (event: PointerEvent): void => {
@@ -2813,6 +3339,24 @@ export class GanttChart extends LitElement {
     if (this.barDrag) this.barDrag.autoScrollFrame = window.requestAnimationFrame(this.handleBarDragAutoScroll);
   };
 
+  /** Keeps the timeline origin stable while a drag extends the visible date window. */
+  private extendScheduleEditTimelineRange(proposedStart: string, proposedEnd: string): void {
+    const range = this.scheduleEditSession?.timelineRange;
+    if (!range) return;
+    const neededStart = parseDateOnly(proposedStart);
+    neededStart.setUTCDate(neededStart.getUTCDate() - 7);
+    const neededEnd = parseDateOnly(proposedEnd);
+    neededEnd.setUTCDate(neededEnd.getUTCDate() + 7);
+    const needed = this.alignRangeToWeeks({ start: neededStart, end: neededEnd });
+    if (needed.start < range.start) {
+      const addedDays = diffDays(needed.start, range.start);
+      range.start = needed.start;
+      const timeline = this.renderRoot.querySelector<HTMLElement>('.timeline-scroll');
+      if (timeline && addedDays > 0) timeline.scrollLeft += addedDays * this.getDayWidth();
+    }
+    if (needed.end > range.end) range.end = needed.end;
+  }
+
   /** Limite les rendus pendant un glisser-déposer à une mise à jour par image. */
   private applyBarDragPosition(clientX: number): void {
     const drag = this.barDrag;
@@ -2829,11 +3373,24 @@ export class GanttChart extends LitElement {
     drag.currentStart = start;
     drag.currentEnd = end;
     drag.changed = start !== drag.originalStart || end !== drag.originalEnd;
-    this.updateTaskDates(drag.taskId, start, end, drag.mode, drag.baseTasks);
+    this.extendScheduleEditTimelineRange(start, end);
+    const session = this.scheduleEditSession;
+    if (session) {
+      session.proposedStart = start;
+      session.proposedEnd = end;
+    }
+    if (this.isSchedulePreviewOnly()) {
+      this.scheduleEditPreview = { taskId: drag.taskId, start, end };
+      this.requestUpdate();
+    } else {
+      this.updateTaskDates(drag.taskId, start, end, drag.mode, drag.baseTasks, this.getScheduleCalculationOptions());
+    }
+    if (session) this.emitScheduleEditPreview();
   }
 
   private finishBarDrag = (): void => {
     document.removeEventListener('pointermove', this.handleBarDragMove);
+    document.removeEventListener('pointercancel', this.cancelScheduleEdit);
     const drag = this.barDrag;
     if (!drag) return;
     if (drag.autoScrollFrame !== undefined) window.cancelAnimationFrame(drag.autoScrollFrame);
@@ -2843,9 +3400,112 @@ export class GanttChart extends LitElement {
       this.applyBarDragPosition(drag.pendingX ?? drag.startX);
     }
     const { taskId, changed } = drag;
+    const session = this.scheduleEditSession;
     this.barDrag = undefined;
-    if (changed) this.commit('task-updated', taskId);
+    if (!session) return;
+    if (!changed) {
+      this.scheduleEditSession = undefined;
+      this.scheduleEditPreview = undefined;
+      this.requestUpdate();
+      return;
+    }
+    if (this.isDeferredScheduleEdit()) {
+      if (this.options.scheduleEditing?.commitMode === 'controlled') void this.commitControlledScheduleEdit(session);
+      else this.commitDeferredScheduleEdit(session);
+      return;
+    }
+    this.scheduleEditSession = undefined;
+    this.scheduleEditPreview = undefined;
+    this.commit('task-updated', taskId, undefined, { updateReason: 'task-date' });
   };
+
+  private restoreScheduleEditSnapshot(data: GanttData): void {
+    this.applyData(data, 'set-data', false, { applyInitialDependencySchedule: false, resetHistory: false, emitSummary: false });
+  }
+
+  private cancelScheduleEditSession(session: NonNullable<GanttChart['scheduleEditSession']>, error?: unknown): void {
+    if (this.scheduleEditSession !== session) return;
+    document.removeEventListener('pointermove', this.handleBarDragMove);
+    document.removeEventListener('pointerup', this.finishBarDrag);
+    document.removeEventListener('pointercancel', this.cancelScheduleEdit);
+    if (this.barDrag?.autoScrollFrame !== undefined) window.cancelAnimationFrame(this.barDrag.autoScrollFrame);
+    if (this.barDrag?.frame !== undefined) window.cancelAnimationFrame(this.barDrag.frame);
+    this.barDrag = undefined;
+    const context = this.createScheduleEditContext(session);
+    this.scheduleEditSession = undefined;
+    this.scheduleEditPreview = undefined;
+    this.restoreScheduleEditSnapshot(session.originalData);
+    if (error) this.dispatch('schedule-edit-error', { error, context });
+    (this.options.onScheduleEditCancel || this.options.scheduleEditing?.onScheduleEditCancel)?.(context);
+  }
+
+  private createCommittedScheduleData(session: NonNullable<GanttChart['scheduleEditSession']>): GanttData {
+    return {
+      ...this.cloneGanttData(session.originalData),
+      tasks: scheduleTaskDates(
+        session.baseTasks,
+        this.dependencies,
+        session.taskId,
+        session.proposedStart,
+        session.proposedEnd,
+        session.mode,
+        (resource, date) => this.isResourceWorkingDay(resource, date),
+        { dependencyCalculation: 'live', resourceCalculation: 'live' },
+      ),
+    };
+  }
+
+  private commitDeferredScheduleEdit(session: NonNullable<GanttChart['scheduleEditSession']>): void {
+    if (this.scheduleEditSession !== session) return;
+    const data = this.options.recalculateOnMoveEnd === false
+      ? this.createDirectScheduleData(session)
+      : this.createCommittedScheduleData(session);
+    this.scheduleEditSession = undefined;
+    this.scheduleEditPreview = undefined;
+    if (this.options.preserveScroll !== false) this.pendingPreservedScroll ||= this.capturePreservedScroll();
+    this.tasks = buildTaskTree(this.withDefaultTaskColors(data.tasks));
+    this.requestUpdate();
+    this.commit('task-updated', session.taskId, undefined, { updateReason: 'task-date' });
+  }
+
+  /** Applies only the date selected by the user; refreshTask() can calculate the rest later. */
+  private createDirectScheduleData(session: NonNullable<GanttChart['scheduleEditSession']>): GanttData {
+    return {
+      ...this.cloneGanttData(session.originalData),
+      tasks: session.originalData.tasks.map(task => task.id === session.taskId
+        ? { ...task, start: session.proposedStart, end: session.proposedEnd }
+        : task),
+    };
+  }
+
+  private async commitControlledScheduleEdit(session: NonNullable<GanttChart['scheduleEditSession']>): Promise<void> {
+    const callback = this.options.onScheduleEditCommit || this.options.scheduleEditing?.onScheduleEditCommit;
+    const request: GanttScheduleCommitRequest = {
+      taskId: session.taskId,
+      mode: session.mode,
+      originalStart: session.originalStart,
+      originalEnd: session.originalEnd,
+      proposedStart: session.proposedStart,
+      proposedEnd: session.proposedEnd,
+      baseRevision: session.baseRevision,
+    };
+    try {
+      if (!callback) throw new Error('No onScheduleEditCommit callback is configured.');
+      const result: GanttScheduleCommitResult = await callback(request);
+      if (this.scheduleEditSession !== session) return;
+      if (result.status !== 'accepted') {
+        this.cancelScheduleEditSession(session, result.error);
+        return;
+      }
+      const canonical = result.data || this.createCommittedScheduleData(session);
+      this.applyData(canonical, 'task-updated', false, { applyInitialDependencySchedule: false, resetHistory: false, emitSummary: false });
+      this.scheduleEditSession = undefined;
+      this.scheduleEditPreview = undefined;
+      this.commit('task-updated', session.taskId, result.revision, { updateReason: 'task-date' });
+    } catch (error) {
+      this.cancelScheduleEditSession(session, error);
+    }
+  }
 
   private updateTaskDates(
     taskId: string,
@@ -2853,9 +3513,10 @@ export class GanttChart extends LitElement {
     end: string,
     mode: 'move' | 'resize-start' | 'resize-end' = 'move',
     baseTasks: GanttTask[] = this.getFlatTasks(),
+    calculationOptions?: ScheduleCalculationOptions,
   ): void {
     if (!this.isTaskEditable(this.findTask(taskId))) return;
-    const next = scheduleTaskDates(baseTasks, this.dependencies, taskId, start, end, mode, (resource, date) => this.isResourceWorkingDay(resource, date));
+    const next = scheduleTaskDates(baseTasks, this.dependencies, taskId, start, end, mode, (resource, date) => this.isResourceWorkingDay(resource, date), calculationOptions);
     this.tasks = buildTaskTree(next);
     this.requestUpdate();
   }
@@ -2901,6 +3562,23 @@ export class GanttChart extends LitElement {
     return flattenTaskTree(this.tasks);
   }
 
+  private getSchedulePreviewTask(task: GanttTask): GanttTask {
+    const preview = this.scheduleEditPreview;
+    return preview?.taskId === task.id
+      ? { ...task, start: preview.start, end: preview.end }
+      : task;
+  }
+
+  private getTimelineTasksForRender(tasks: GanttTask[]): GanttTask[] {
+    if (!this.scheduleEditPreview) return tasks;
+    return tasks.map(task => this.getSchedulePreviewTask(task));
+  }
+
+  private getTimelineRenderRange(tasks: GanttTask[]): GanttTimelineRange {
+    const editingRange = this.scheduleEditSession?.timelineRange;
+    return editingRange || this.alignRangeToWeeks(getDateRange(this.getTimelineTasksForRender(tasks)));
+  }
+
   /** Returns the contiguous tree branch to preserve when a row is repositioned. */
   private getTaskSubtreeIds(rootId: string, tasks: GanttTask[]): Set<string> {
     return getTaskSubtreeIds(rootId, tasks);
@@ -2918,7 +3596,14 @@ export class GanttChart extends LitElement {
     this.renderTaskDepths = getTaskDepths(flatTasks);
     this.renderTaskCodes = getTaskOutlineCodes(this.tasks);
 
-    this.renderTaskCosts = calculateTaskCosts(this.tasks, resource => this.getResourceCost(resource));
+    const deferCostCalculation = Boolean(
+      this.scheduleEditSession
+      && this.options.scheduleEditing?.enabled !== false
+      && this.options.scheduleEditing?.costCalculation === 'on-commit',
+    );
+    if (!deferCostCalculation) {
+      this.renderTaskCosts = calculateTaskCosts(this.tasks, resource => this.getResourceCost(resource));
+    }
   }
 
   private findTask(taskId: string | null): GanttTask | null {
@@ -3339,7 +4024,7 @@ export class GanttChart extends LitElement {
     created.quantityByDate = resource.quantityByDate
       ?? this.createDistributedQuantities(task.start, task.end, totalQuantity, created);
     const next = this.getFlatTasks().map(item => item.id === taskId ? { ...item, resources: [...(item.resources || []), created] } : item);
-    this.replaceFlatTasks(next, 'task-updated', taskId);
+    this.replaceFlatTasks(next, 'task-updated', taskId, { updateReason: 'resource-added', assignmentIds: [created.id] });
     return created;
   }
 
@@ -3361,7 +4046,7 @@ export class GanttChart extends LitElement {
       });
       return { ...task, resources };
     });
-    this.replaceFlatTasks(next, 'task-updated', taskId);
+    this.replaceFlatTasks(next, 'task-updated', taskId, { updateReason: 'resource-updated', assignmentIds: [resourceId] });
   }
 
   private updateResourcePatch(taskId: string, resourceId: string, patch: Partial<GanttResource>): void {
@@ -3369,7 +4054,7 @@ export class GanttChart extends LitElement {
     const next = this.getFlatTasks().map(task => task.id === taskId
       ? { ...task, resources: (task.resources || []).map(resource => resource.id === resourceId ? { ...resource, ...patch } : resource) }
       : task);
-    this.replaceFlatTasks(next, 'task-updated', taskId);
+    this.replaceFlatTasks(next, 'task-updated', taskId, { updateReason: 'resource-updated', assignmentIds: [resourceId] });
   }
 
   /** Répartit une quantité totale sur tous les jours inclus dans la tâche.
@@ -3385,7 +4070,7 @@ export class GanttChart extends LitElement {
         : resource);
       return { ...task, resources };
     });
-    this.replaceFlatTasks(next, 'task-updated', taskId);
+    this.replaceFlatTasks(next, 'task-updated', taskId, { updateReason: 'manual-quantity', assignmentIds: [resourceId] });
   }
 
   private updateResourceQuantity(taskId: string, resourceId: string, date: string, rawValue: string): void {
@@ -3403,7 +4088,7 @@ export class GanttChart extends LitElement {
       });
       return { ...task, resources };
     });
-    this.replaceFlatTasks(next, 'task-updated', taskId);
+    this.replaceFlatTasks(next, 'task-updated', taskId, { updateReason: 'manual-quantity', assignmentIds: [resourceId] });
   }
 
   private openResourceContextMenu(taskId: string, event: MouseEvent): void {
@@ -3432,6 +4117,59 @@ export class GanttChart extends LitElement {
     this.closeResourceContextMenu();
   };
 
+  private openDependencyContextMenu(dependency: GanttDependency, event: MouseEvent | KeyboardEvent, focusMenu = false): void {
+    if (!this.options.dependencyContextMenuTemplate) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const target = event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+    const bounds = target?.getBoundingClientRect();
+    const pointerEvent = event as MouseEvent;
+    const hasPointerPosition = typeof pointerEvent.clientX === 'number'
+      && typeof pointerEvent.clientY === 'number'
+      && (pointerEvent.clientX !== 0 || pointerEvent.clientY !== 0);
+    const x = hasPointerPosition ? pointerEvent.clientX : (bounds?.left || 0) + (bounds?.width || 0) / 2;
+    const y = hasPointerPosition ? pointerEvent.clientY : (bounds?.top || 0) + (bounds?.height || 0) / 2;
+    const margin = 8;
+    this.taskTooltip = undefined;
+    this.resourceContextMenu = undefined;
+    this.ganttContextMenu = undefined;
+    this.taskContextMenu = undefined;
+    this.taskContextSubmenuOpen = false;
+    this.focusDependencyContextMenu = focusMenu;
+    this.dependencyContextMenu = {
+      dependency: { ...dependency },
+      x: Math.max(margin, Math.min(x, window.innerWidth - margin)),
+      y: Math.max(margin, Math.min(y, window.innerHeight - margin)),
+    };
+    this.requestUpdate();
+    void this.updateComplete.then(() => {
+      this.positionContextMenuInViewport('.dependency-context-menu');
+      if (!this.focusDependencyContextMenu) return;
+      this.focusDependencyContextMenu = false;
+      const menu = this.renderRoot.querySelector<HTMLElement>('.dependency-context-menu');
+      const focusable = menu?.querySelector<HTMLElement>('button, [role="menuitem"], [tabindex]:not([tabindex="-1"])');
+      (focusable || menu)?.focus();
+    });
+  }
+
+  private handleDependencyKeyDown(dependency: GanttDependency, event: KeyboardEvent): void {
+    const opensContextMenu = event.key === 'ContextMenu'
+      || event.key === 'Apps'
+      || event.key === 'Menu'
+      || (event.key === 'F10' && event.shiftKey);
+    if (opensContextMenu) this.openDependencyContextMenu(dependency, event, true);
+  }
+
+  private fitDependencyToView(dependency: GanttDependency): void {
+    const from = this.findTask(dependency.from);
+    const to = this.findTask(dependency.to);
+    if (!from || !to) return;
+    this.fitDateRangeToView(
+      from.start < to.start ? from.start : to.start,
+      from.end > to.end ? from.end : to.end,
+    );
+  }
+
   /** Opens the task menu on a bar, otherwise the global Gantt menu on an empty grid area. */
   private openTimelineContextMenu = (event: MouseEvent): void => {
     const target = event.target as HTMLElement | null;
@@ -3448,6 +4186,8 @@ export class GanttChart extends LitElement {
     this.taskTooltip = undefined;
     this.resourceContextMenu = undefined;
     this.taskContextMenu = undefined;
+    this.dependencyContextMenu = undefined;
+    this.focusDependencyContextMenu = false;
     this.taskContextSubmenuOpen = false;
     this.ganttContextMenu = {
       x: Math.max(margin, Math.min(event.clientX, window.innerWidth - margin)),
@@ -3492,6 +4232,8 @@ export class GanttChart extends LitElement {
     this.taskTooltip = undefined;
     this.resourceContextMenu = undefined;
     this.ganttContextMenu = undefined;
+    this.dependencyContextMenu = undefined;
+    this.focusDependencyContextMenu = false;
     this.taskContextSubmenuOpen = false;
     this.taskContextMenu = {
       taskId,
@@ -3573,11 +4315,20 @@ export class GanttChart extends LitElement {
 
   /** Closes any open context menu when the user clicks outside its interactive panel. */
   private closeOpenContextMenus = (): void => {
-    if (!this.resourceContextMenu && !this.ganttContextMenu && !this.taskContextMenu) return;
+    if (!this.resourceContextMenu && !this.ganttContextMenu && !this.taskContextMenu && !this.dependencyContextMenu) return;
     this.resourceContextMenu = undefined;
     this.ganttContextMenu = undefined;
     this.taskContextMenu = undefined;
+    this.dependencyContextMenu = undefined;
+    this.focusDependencyContextMenu = false;
     this.taskContextSubmenuOpen = false;
+    this.requestUpdate();
+  };
+
+  private closeDependencyContextMenu = (): void => {
+    if (!this.dependencyContextMenu) return;
+    this.dependencyContextMenu = undefined;
+    this.focusDependencyContextMenu = false;
     this.requestUpdate();
   };
 
@@ -3746,7 +4497,7 @@ export class GanttChart extends LitElement {
   private removeResource(taskId: string, resourceId: string): void {
     if (!this.isTaskEditable(this.findTask(taskId))) return;
     const next = this.getFlatTasks().map(task => task.id === taskId ? { ...task, resources: (task.resources || []).filter(resource => resource.id !== resourceId) } : task);
-    this.replaceFlatTasks(next, 'task-updated', taskId);
+    this.replaceFlatTasks(next, 'task-updated', taskId, { updateReason: 'resource-removed', assignmentIds: [resourceId] });
   }
 
   private isDescendant(taskId: string | null, possibleAncestor: string): boolean {
@@ -3850,17 +4601,83 @@ export class GanttChart extends LitElement {
   private getNonWorkingDays(): number[] { return this.options.nonWorkingDays === undefined ? [0, 6] : this.options.nonWorkingDays.filter(day => Number.isInteger(day) && day >= 0 && day <= 6); }
   private isNonWorkingDay(date: Date): boolean { return calculateNonWorkingDay(date, this.getNonWorkingDays()); }
   private isNonWorkingBlockStart(date: Date): boolean { return calculateNonWorkingBlockStart(date, this.getNonWorkingDays()); }
-  private getResourceCalendar(resource: GanttResource): GanttCalendar | undefined { return this.calendars.find(calendar => calendar.id === resource.calendarId); }
-  private getResourceCalendarLabel(resource: GanttResource): string { return this.getResourceCalendar(resource)?.name || this.t('resource'); }
-  private isResourceWorkingDay(resource: GanttResource, date: Date): boolean {
-    const calendar = this.getResourceCalendar(resource);
+  private getProjectCalendar(): GanttCalendar | undefined {
+    return this.calendars.find(calendar => calendar.id === this.projectCalendarId) || this.calendars[0];
+  }
+
+  private getTaskCalendar(task: GanttTask): GanttCalendar | undefined {
+    return this.calendars.find(calendar => calendar.id === task.calendarId) || this.getProjectCalendar();
+  }
+
+  private getResourceCalendar(resource: GanttResource, task?: GanttTask): GanttCalendar | undefined {
+    return this.calendars.find(calendar => calendar.id === resource.calendarId) || (task ? this.getTaskCalendar(task) : this.getProjectCalendar());
+  }
+
+  private getResourceCalendarLabel(resource: GanttResource, task?: GanttTask): string { return this.getResourceCalendar(resource, task)?.name || this.t('resource'); }
+
+  private prepareCalendarStates(start: Date, totalDays: number): void {
+    const calendars = [this.getProjectCalendar(), ...this.calendars].filter((calendar): calendar is GanttCalendar => Boolean(calendar));
+    for (const calendar of calendars) {
+      const states = this.calendarDateStates.get(calendar.id) || new Map<string, GanttCalendarDayState>();
+      this.calendarDateStates.set(calendar.id, states);
+      for (let index = 0; index < totalDays; index += 1) {
+        const date = new Date(start.getTime());
+        date.setUTCDate(date.getUTCDate() + index);
+        const key = formatDate(date);
+        if (!states.has(key)) states.set(key, calculateCalendarDayState(calendar, date, this.getNonWorkingDays()));
+      }
+    }
+    const fallback = this.calendarDateStates.get('__fallback__') || new Map<string, GanttCalendarDayState>();
+    this.calendarDateStates.set('__fallback__', fallback);
+    for (let index = 0; index < totalDays; index += 1) {
+      const date = new Date(start.getTime());
+      date.setUTCDate(date.getUTCDate() + index);
+      const key = formatDate(date);
+      if (!fallback.has(key)) fallback.set(key, calculateCalendarDayState(undefined, date, this.getNonWorkingDays()));
+    }
+  }
+
+  private getCalendarDayState(calendar: GanttCalendar | undefined, date: Date): GanttCalendarDayState {
+    const key = formatDate(date);
+    const cacheKey = calendar?.id || '__fallback__';
+    const cached = this.calendarDateStates.get(cacheKey)?.get(key);
+    if (cached) return cached;
+    const state = calculateCalendarDayState(calendar, date, this.getNonWorkingDays());
+    const states = this.calendarDateStates.get(cacheKey) || new Map<string, GanttCalendarDayState>();
+    states.set(key, state);
+    this.calendarDateStates.set(cacheKey, states);
+    return state;
+  }
+
+  private getCalendarBandClass(state: GanttCalendarDayState, date: Date, calendar?: GanttCalendar): string {
+    if (state.working) return state.exception === 'working' ? 'calendar-working' : '';
+    const isWeekend = this.isNonWorkingDay(date) && (!calendar?.workingDays || !calendar.workingDays.includes(date.getUTCDay()));
+    return state.exception === 'non-working' || !isWeekend ? 'calendar-non-working' : 'weekend';
+  }
+
+  private formatCalendarDayTitle(date: Date, state: GanttCalendarDayState, calendarName?: string): string {
+    const status = state.working
+      ? (this.getLocale().toLowerCase().startsWith('fr') ? 'Jour travaillé' : 'Working day')
+      : this.t('nonWorkingDay');
+    const label = state.label ? ` — ${state.label}` : '';
+    const calendar = calendarName ? ` — ${calendarName}` : '';
+    return `${this.formatDayTitle(date)}${label} — ${status}${calendar}`;
+  }
+
+  private formatResourceCalendarDayTitle(task: GanttTask, resource: GanttResource, date: Date): string {
+    const calendar = this.getResourceCalendar(resource, task);
+    return this.formatCalendarDayTitle(date, this.getCalendarDayState(calendar, date), calendar?.name || this.t('resource'));
+  }
+
+  private isResourceWorkingDay(resource: GanttResource, date: Date, task?: GanttTask): boolean {
+    const calendar = this.getResourceCalendar(resource, task);
     return calculateResourceWorkingDay(resource, calendar, date, this.getNonWorkingDays());
   }
-  private isResourceNonWorkingBlockStart(resource: GanttResource, date: Date): boolean {
-    if (this.isResourceWorkingDay(resource, date)) return false;
+  private isResourceNonWorkingBlockStart(resource: GanttResource, date: Date, task?: GanttTask): boolean {
+    if (this.isResourceWorkingDay(resource, date, task)) return false;
     const previous = new Date(date.getTime());
     previous.setUTCDate(previous.getUTCDate() - 1);
-    return this.isResourceWorkingDay(resource, previous);
+    return this.isResourceWorkingDay(resource, previous, task);
   }
 
   private dispatch(name: string, detail: unknown): void {

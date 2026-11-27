@@ -5,6 +5,11 @@ import { diffDays, formatDate, parseDateOnly } from './utils';
 export type ScheduleUpdateMode = 'move' | 'resize-start' | 'resize-end';
 export type ResourceWorkingDay = (resource: GanttResource, date: Date) => boolean;
 
+export interface ScheduleCalculationOptions {
+  dependencyCalculation?: 'live' | 'on-commit';
+  resourceCalculation?: 'live' | 'on-commit';
+}
+
 function addDays(value: string, days: number): string {
   const date = parseDateOnly(value);
   date.setUTCDate(date.getUTCDate() + days);
@@ -80,18 +85,21 @@ export function scheduleTaskDates(
   requestedEnd: string,
   mode: ScheduleUpdateMode,
   isWorkingDay: ResourceWorkingDay,
+  options: ScheduleCalculationOptions = {},
 ): GanttTask[] {
   const next = baseTasks.map(task => ({ ...task }));
   const { byId, childrenByParent, outgoingBySource } = createTaskIndexes(next, dependencies);
   const root = byId.get(taskId);
   if (!root) return next;
+  const calculateDependencies = options.dependencyCalculation !== 'on-commit';
+  const calculateResources = options.resourceCalculation !== 'on-commit';
 
   const shiftSubtree = (rootId: string, days: number): void => {
     const task = byId.get(rootId);
     if (!task) return;
     task.start = addDays(task.start, days);
     task.end = addDays(task.end, days);
-    shiftResourceDates(task, days);
+    if (calculateResources) shiftResourceDates(task, days);
     childrenByParent.get(rootId)?.forEach(childId => shiftSubtree(childId, days));
   };
 
@@ -99,8 +107,10 @@ export function scheduleTaskDates(
   else {
     root.start = requestedStart;
     root.end = requestedEnd;
-    redistributeResourceDates(root, isWorkingDay);
+    if (calculateResources) redistributeResourceDates(root, isWorkingDay);
   }
+
+  if (!calculateDependencies) return next;
 
   const visited = new Set<string>();
   const propagate = (sourceId: string): void => {

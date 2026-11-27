@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Création en ligne — Gantt</title>
+  <style>
+    body { margin: 24px; font: 16px/1.5 system-ui, sans-serif; color: #172b4d; background: #f4f6f8; }
+    h1 { font-size: 24px; margin-bottom: 8px; }
+    p { max-width: 80ch; }
+    gantt-chart { display: block; height: 640px; background: white; }
+    label { display: block; margin-block: 12px; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <h1>Créer directement dans les grilles</h1>
+  <p>Démonstration avec un serveur simulé : Tabulation pour se déplacer, Entrée pour créer, Échap pour annuler. Saisissez « ENG » et choisissez une suggestion pour utiliser le catalogue, ou saisissez une nouvelle ressource et validez directement. Le panneau détaché partage le même brouillon.</p>
+  <label><input id="fail" type="checkbox"> Simuler une erreur lors de la prochaine sauvegarde</label>
+  <gantt-chart></gantt-chart>
+  <pre id="result" aria-live="polite">Aucun enregistrement effectué.</pre>
+  <script type="module" src="./inline-creation-demo.ts"></script>
+</body>
+</html>

@@ -46,6 +46,8 @@ export interface GanttCalendar {
   hours?: Partial<Record<number, GanttWorkingRange[]>>;
   /** Per-date overrides keyed by YYYY-MM-DD. */
   exceptions?: Record<string, 'working' | 'non-working'>;
+  /** Optional human-readable labels for per-date overrides keyed by YYYY-MM-DD. */
+  exceptionLabels?: Record<string, string>;
 }
 
 export type DependencyType =
@@ -80,6 +82,8 @@ export interface GanttTask {
   resources?: GanttResource[];
   /** Persisted task-bar colour. A default is added automatically when the task is imported or created. */
   color?: string;
+  /** Effective calendar supplied by the host application for this task or phase. */
+  calendarId?: string;
   children?: GanttTask[];
   collapsed?: boolean;
   metadata?: Record<string, unknown>;
@@ -108,9 +112,26 @@ export interface GanttResource {
   metadata?: Record<string, GanttFieldValue>;
 }
 
+/**
+ * Patch accepted by the incremental assignment API. `assignmentId` is the
+ * business-facing spelling used by 1.4 integrations; `id` remains accepted
+ * for compatibility with the canonical `GanttResource` shape.
+ */
+export type GanttResourceAssignmentPatch = Partial<GanttResource> & {
+  assignmentId?: string;
+};
+
+/** Canonical assignment returned by a business API. */
+export type GanttResourceAssignment = GanttResource & {
+  /** Optional business-facing alias for the canonical assignment id. */
+  assignmentId?: string;
+};
+
 /** Ressource issue d'un référentiel métier externe. */
 export interface GanttResourceReference {
   id: string;
+  /** Optional business code displayed by inline catalogue suggestions. */
+  code?: string;
   name: string;
   type?: GanttResourceType | string;
   unit?: string;
@@ -152,6 +173,8 @@ export interface GanttData {
   dependencies?: GanttDependency[];
   /** Calendars travel with JSON, local persistence and custom MPP adapters. */
   calendars?: GanttCalendar[];
+  /** Calendar used for the planning columns when no task-specific calendar overrides it. */
+  projectCalendarId?: string;
   /** Extra project-level data is preserved by JSON and persistence adapters. */
   metadata?: Record<string, unknown>;
 }
@@ -197,6 +220,16 @@ export interface GanttResourceColumnRenderContext {
   formattedValue: string;
 }
 
+/** Editor controls supported by an editable resource-grid column. */
+export type GanttResourceColumnEditor = 'text' | 'number' | 'select';
+
+/** One option displayed by a native select resource-grid editor. */
+export interface GanttResourceColumnOption {
+  value: string | number;
+  label: string;
+  disabled?: boolean;
+}
+
 export interface GanttColumn {
   /** Built-in keys include mode, code, name, duration, start and end. */
   key: string;
@@ -230,6 +263,10 @@ export interface GanttResourceColumn {
   width: number;
   /** `string` is an alias of `text`; `integer` and `decimal` control numeric input defaults. */
   type?: GanttColumnTypeValue;
+  /** Explicitly selects the native editor used by an editable resource column. */
+  editor?: GanttResourceColumnEditor;
+  /** Options used by a native select editor. Labels and values are supplied by the host application. */
+  options?: readonly GanttResourceColumnOption[];
   /** Minimum accepted numeric value. Omit it to leave the input unconstrained. */
   min?: number;
   /** Numeric input increment. Use `any` for arbitrary decimal values. */
@@ -367,6 +404,21 @@ export interface GanttTaskContextMenuTemplateContext {
 /** Replaces the built-in task right-click menu. Return Lit content, including nested menus when needed. */
 export type GanttTaskContextMenuTemplate = (context: GanttTaskContextMenuTemplateContext) => unknown;
 
+/** Actions available while rendering a dependency's right-click menu. */
+export interface GanttDependencyContextMenuTemplateContext {
+  /** The Gantt component instance that opened this menu. */
+  gantt: GanttChart;
+  /** The dependency represented by the focused connector arrow. */
+  dependency: GanttDependency;
+  /** Whether the endpoint tasks allow dependency mutations. */
+  editable: boolean;
+  close: () => void;
+  fitToView: () => void;
+}
+
+/** Replaces the content of the dependency right-click menu. */
+export type GanttDependencyContextMenuTemplate = (context: GanttDependencyContextMenuTemplateContext) => unknown;
+
 /** Actions available while rendering the right-click menu of an empty Gantt timeline area. */
 export interface GanttTimelineContextMenuTemplateContext {
   close: () => void;
@@ -382,6 +434,13 @@ export type GanttTimelineContextMenuTemplate = (context: GanttTimelineContextMen
 
 /** Text displayed by the component. Override only the entries your product needs. */
 export interface GanttTranslations {
+  inlineSaveFailed: string;
+  inlineSaving: string;
+  inlineRequired: string;
+  inlineInvalid: string;
+  inlineNotAllowed: string;
+  inlineSelectReference: string;
+  inlineInvalidResponse: string;
   import: string;
   exportJson: string;
   exportMspxml: string;
@@ -644,7 +703,158 @@ export interface GanttTaskDeletionOptions {
   confirm?: (context: GanttTaskDeleteContext) => boolean | Promise<boolean>;
 }
 
-export interface GanttOptions {
+/** Calculation strategy used while a task bar is being moved or resized. */
+export type GanttCalculationMode = 'live' | 'on-commit';
+
+/** The kind of timeline edit currently being performed. */
+export type GanttScheduleEditMode = 'move' | 'resize-start' | 'resize-end';
+
+/** Snapshot supplied to schedule-edit lifecycle callbacks. */
+export interface GanttScheduleEditContext {
+  taskId: string;
+  mode: GanttScheduleEditMode;
+  originalStart: string;
+  originalEnd: string;
+  proposedStart: string;
+  proposedEnd: string;
+  originalData: GanttData;
+  previewData: GanttData;
+}
+
+/** Request sent to the host when schedule editing uses a controlled commit. */
+export interface GanttScheduleCommitRequest {
+  taskId: string;
+  mode: GanttScheduleEditMode;
+  originalStart: string;
+  originalEnd: string;
+  proposedStart: string;
+  proposedEnd: string;
+  baseRevision?: number;
+}
+
+/** Result returned by a controlled schedule-edit commit. */
+export interface GanttScheduleCommitResult {
+  status: 'accepted' | 'rejected';
+  data?: GanttData;
+  revision?: number;
+  error?: string;
+}
+
+/** Controls deferred schedule calculations and host-owned schedule commits. */
+export interface GanttScheduleEditingOptions {
+  /** Enables task move and resize schedule editing. Defaults to true when configured. */
+  enabled?: boolean;
+  dependencyCalculation?: GanttCalculationMode;
+  resourceCalculation?: GanttCalculationMode;
+  costCalculation?: GanttCalculationMode;
+  summaryCalculation?: GanttCalculationMode;
+  commitMode?: 'internal' | 'controlled';
+  onScheduleEditStart?: (context: GanttScheduleEditContext) => void;
+  onScheduleEditPreview?: (context: GanttScheduleEditContext) => void;
+  onScheduleEditCancel?: (context: GanttScheduleEditContext) => void;
+  onScheduleEditCommit?: (request: GanttScheduleCommitRequest) => GanttScheduleCommitResult | Promise<GanttScheduleCommitResult>;
+}
+
+/** Controls the 1.4 incremental update path and view-state preservation. */
+export interface GanttIncrementalUpdateOptions {
+  /** Keeps targeted API updates on the incremental render path. Defaults to true. */
+  incrementalUpdates?: boolean;
+  /** Recalculates dependencies, occurrences and summaries when a move ends. Defaults to true. */
+  recalculateOnMoveEnd?: boolean;
+  /** Restores horizontal and vertical scroll positions after an update. Defaults to true. */
+  preserveScroll?: boolean;
+}
+
+/** A draft never belongs to getData(), calculations, history or exports. */
+export type GanttTaskCreationDraft = Partial<Omit<GanttTask, 'id' | 'children'>>;
+export type GanttResourceCreationDraft = Partial<Omit<GanttResource, 'id'>>;
+export type GanttResourceCreationMode = 'catalogue' | 'free';
+export type GanttInlineCreationShortcut = string | readonly string[] | false;
+
+/** Bind a host-owned resource search input to the current creation draft. */
+export interface GanttResourceCreationInputContext {
+  task: GanttTask;
+  column: GanttResourceColumn;
+  draft: GanttResourceCreationDraft;
+  value: string;
+  disabled: boolean;
+  required: boolean;
+  reference?: GanttResourceReference;
+  /** Updates this field and invalidates a previous catalogue choice for name/code. */
+  onInput: (value: string) => void;
+  /** Selects a catalogue result, or clears the choice with null. Does not save. */
+  selectReference: (reference: GanttResourceReference | null) => void;
+  renderDefault: () => unknown;
+}
+
+export type GanttResourceCreationInputTemplate = (context: GanttResourceCreationInputContext) => unknown;
+
+export interface GanttTaskCreationContext {
+  selectedTask: GanttTask | null;
+  lastTask: GanttTask | null;
+  /** Defaults to root. Resolved once when the user starts a draft. */
+  parentId: string | null;
+  /** Insertion offset in the flattened task tree; defaults to its length. */
+  index: number;
+}
+
+export interface GanttResourceCreationContext {
+  task: GanttTask;
+  mode: GanttResourceCreationMode;
+  /** Present only after an explicit catalogue selection. */
+  reference?: GanttResourceReference;
+}
+
+/** Return an error message to keep the draft, or nothing to accept it. */
+export type GanttCreationValidation = string | void;
+
+export interface GanttTaskInlineCreationOptions {
+  /** Opt-in. Defaults to false. */
+  enabled?: boolean;
+  canCreate?: (context: GanttTaskCreationContext) => boolean;
+  getContext?: (context: GanttTaskCreationContext) => Partial<Pick<GanttTaskCreationContext, 'parentId' | 'index'>>;
+  defaults?: GanttTaskCreationDraft | ((context: GanttTaskCreationContext) => GanttTaskCreationDraft);
+  /** Defaults to ['name']. Custom fields use fields.myKey. Unrelated to column.required. */
+  requiredFields?: readonly string[];
+  validate?: (draft: GanttTaskCreationDraft, context: GanttTaskCreationContext) => GanttCreationValidation | Promise<GanttCreationValidation>;
+  /** Persist once and return the complete server-confirmed task, including its ID. */
+  save: (draft: GanttTaskCreationDraft, context: GanttTaskCreationContext) => GanttTask | Promise<GanttTask>;
+}
+
+export interface GanttResourceInlineCreationOptions {
+  /** Opt-in. Defaults to false. */
+  enabled?: boolean;
+  /** Defaults to ['catalogue']. Without a selected reference, confirmation uses free mode when allowed. */
+  modes?: readonly GanttResourceCreationMode[];
+  /** Replaces editable inputs, e.g. with a host search widget. Disables built-in catalogue search. */
+  inputTemplate?: GanttResourceCreationInputTemplate;
+  canCreate?: (task: GanttTask) => boolean;
+  /** Overrides resourceProvider.search for this row. Queries can contain a code or name. */
+  search?: (query: string, context: GanttResourceCreationContext) => Promise<GanttResourceReference[]>;
+  defaults?: GanttResourceCreationDraft | ((context: GanttResourceCreationContext) => GanttResourceCreationDraft);
+  /** Defaults to ['name']. Custom fields use metadata.myKey. */
+  requiredFields?: readonly string[];
+  /** Additional allowlist for catalogue fields; column.editable must also be true. */
+  catalogueEditableFields?: readonly string[];
+  validate?: (draft: GanttResourceCreationDraft, context: GanttResourceCreationContext) => GanttCreationValidation | Promise<GanttCreationValidation>;
+  /** Returns an assignment, never a catalogue entry. Free entries must not be added to the catalogue. */
+  save: (draft: GanttResourceCreationDraft, context: GanttResourceCreationContext) => GanttResource | Promise<GanttResource>;
+}
+
+export interface GanttInlineCreationOptions {
+  /** Hides both creation rows regardless of their enabled state. Defaults to false. */
+  readOnly?: boolean;
+  /** Keyboard key/shortcut or alternatives. Defaults to Enter. Use false to disable. */
+  confirmKey?: GanttInlineCreationShortcut;
+  /** Keyboard key/shortcut or alternatives. Defaults to Escape. Use false to disable. */
+  cancelKey?: GanttInlineCreationShortcut;
+  tasks?: GanttTaskInlineCreationOptions;
+  resources?: GanttResourceInlineCreationOptions;
+}
+
+export interface GanttOptions extends GanttIncrementalUpdateOptions {
+  /** Independent opt-in creation rows. Existing creation entry points are preserved. */
+  inlineCreation?: GanttInlineCreationOptions;
   headerWidth?: number;
   /** Default height of each task row in pixels. Clamped between 28 and 96; defaults to 42. */
   taskRowHeight?: number;
@@ -677,6 +887,8 @@ export interface GanttOptions {
   history?: GanttHistoryOptions;
   /** Controls deletion from the toolbar, Delete key and task context menus. */
   taskDeletion?: GanttTaskDeletionOptions;
+  /** Controls live/deferred calculations and optional host-owned schedule commits. */
+  scheduleEditing?: GanttScheduleEditingOptions;
   /** Set false to disable task-bar tooltips. Defaults to true. */
   showTaskTooltips?: boolean;
   /** Replaces the content of the task-bar tooltip while keeping its positioning and visual shell. */
@@ -715,10 +927,20 @@ export interface GanttOptions {
   taskEditorTemplate?: GanttTaskEditorTemplate;
   /** Replaces the built-in task right-click menu with host-provided content. */
   taskContextMenuTemplate?: GanttTaskContextMenuTemplate;
+  /** Replaces the right-click menu displayed on a dependency connector arrow. */
+  dependencyContextMenuTemplate?: GanttDependencyContextMenuTemplate;
   /** Replaces the right-click menu displayed on an empty Gantt timeline area. */
   ganttContextMenuTemplate?: GanttTimelineContextMenuTemplate;
   /** Opens a host-owned modal or drawer when the user selects Add resource. */
   resourcePicker?: GanttResourcePicker;
+  /** Called when a task move/resize session starts. */
+  onScheduleEditStart?: (context: GanttScheduleEditContext) => void;
+  /** Called for a task move/resize preview frame. */
+  onScheduleEditPreview?: (context: GanttScheduleEditContext) => void;
+  /** Called when a task move/resize session is cancelled or rejected. */
+  onScheduleEditCancel?: (context: GanttScheduleEditContext) => void;
+  /** Resolves a controlled task move/resize commit. */
+  onScheduleEditCommit?: (request: GanttScheduleCommitRequest) => GanttScheduleCommitResult | Promise<GanttScheduleCommitResult>;
   /** IETF locale used for dates, numbers and built-in labels. Defaults to en-US. */
   locale?: string;
   /** First day of the displayed week. Uses UTC day numbers: 0 = Sunday, 1 = Monday. Defaults to 1. */
@@ -764,6 +986,29 @@ export type GanttChangeReason =
   | 'history-undo'
   | 'history-redo'
   | 'imported';
+
+/** Reason emitted by the focused 1.4 task-updated event. */
+export type UpdateReason =
+  | 'task-date'
+  | 'task-label'
+  | 'task-hierarchy'
+  | 'resource-added'
+  | 'resource-updated'
+  | 'resource-removed'
+  | 'manual-quantity'
+  | 'full-refresh';
+
+export interface GanttTaskUpdatedEventDetail {
+  taskId: string;
+  reason: UpdateReason;
+  revision: number;
+}
+
+export interface GanttResourceAssignmentUpdatedEventDetail {
+  taskId: string;
+  assignmentId: string;
+  revision: number;
+}
 
 export interface GanttChange {
   projectId: string | null;
